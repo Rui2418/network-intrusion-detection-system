@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>常见网络攻击检测系统</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Network Attack Detection</p>
+        <h1>常见网络攻击检测系统</h1>
+        <p class="intro">导入网络访问日志，检测端口扫描、暴力登录、异常访问频率、可疑路径和异常状态码。</p>
+      </div>
+      <div class="actions">
+        <button id="sampleBtn" type="button">加载示例数据</button>
+        <label class="upload-btn">
+          上传 CSV
+          <input id="fileInput" type="file" accept=".csv,text/csv">
+        </label>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="检测统计">
+      <div class="metric">
+        <span>日志数量</span>
+        <strong id="eventCount">0</strong>
+      </div>
+      <div class="metric high">
+        <span>高危</span>
+        <strong id="highCount">0</strong>
+      </div>
+      <div class="metric medium">
+        <span>中危</span>
+        <strong id="mediumCount">0</strong>
+      </div>
+      <div class="metric low">
+        <span>低危</span>
+        <strong id="lowCount">0</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <h2>告警结果</h2>
+        <span id="statusText">等待导入日志</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>源 IP</th>
+              <th>目标</th>
+              <th>等级</th>
+              <th>分数</th>
+              <th>依据</th>
+            </tr>
+          </thead>
+          <tbody id="alertBody">
+            <tr>
+              <td colspan="6" class="empty">暂无检测结果</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -55,16 +55,16 @@
 
 ## 技术路线
 
-项目初步采用以下技术方案：
+项目当前采用以下技术方案：
 
 - 后端语言：Python
-- Web 框架：Flask 或 FastAPI
+- Web 框架：Flask
 - 前端技术：HTML、CSS、JavaScript
-- 数据处理：正则表达式、规则匹配、时间窗口统计
-- 数据存储：CSV / JSON / SQLite
-- 可视化展示：表格、统计卡片、简单图表
+- 数据处理：规则匹配、时间窗口统计
+- 数据格式：CSV
+- 可视化展示：告警表格和统计卡片
 
-后续可根据项目进度选择是否引入 Vue、React、ECharts 等前端工具。
+后续可根据项目进度选择是否引入 ECharts、SQLite、登录认证和报告导出等功能。
 
 ## 系统流程
 
@@ -77,21 +77,25 @@
 
 ## 项目结构
 
-当前项目结构会随着开发逐步完善，计划如下：
+当前基础框架如下：
 
 ```text
 network intrusion detection system/
 ├── README.md
-├── docs/                  # 项目文档
+├── requirements.txt       # Python 依赖
+├── run.py                 # Web 应用启动入口
+├── pytest.ini             # 测试配置
 ├── data/                  # 示例日志和测试数据
+│   └── sample_logs.csv
 ├── src/                   # 源代码
+│   ├── app.py             # Flask 应用和 API
 │   ├── parser/            # 日志解析模块
 │   ├── detector/          # 攻击检测规则模块
 │   ├── scoring/           # 风险评分模块
-│   ├── web/               # Web 页面和接口
+│   ├── static/            # 前端脚本和样式
+│   ├── templates/         # 页面模板
 │   └── utils/             # 通用工具函数
-├── tests/                 # 测试代码
-└── reports/               # 检测结果和实验报告
+└── tests/                 # 测试代码
 ```
 
 ## 检测规则设计
@@ -152,15 +156,31 @@ network intrusion detection system/
 
 ## 运行方式
 
-当前项目处于初始设计阶段，运行方式将在系统实现后补充。
-
-计划运行方式示例：
+安装依赖：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python src/app.py
+python -m pip install -r requirements.txt
+```
+
+启动 Web 应用：
+
+```bash
+python run.py
+```
+
+启动后在浏览器访问 Flask 输出的本地地址，进入页面后可以点击“加载示例数据”查看检测结果，也可以上传符合字段格式的 CSV 日志文件。
+
+运行测试：
+
+```bash
+python -m pytest
+```
+
+CSV 日志字段格式如下：
+
+```text
+timestamp,source_ip,target_ip,port,path,status_code,username,login_success
+2026-07-08T10:00:00,192.168.1.20,10.0.0.5,80,/index,200,,
 ```
 
 ## 说明
