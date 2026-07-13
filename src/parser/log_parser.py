@@ -17,6 +17,13 @@ class LogEvent:
     status_code: int
     username: str
     login_success: bool | None
+    method: str = ""
+    protocol: str = ""
+    host: str = ""
+    user_agent: str = ""
+    bytes_sent: int | None = None
+    duration_ms: int | None = None
+    tls_fingerprint: str = ""
 
 
 def parse_bool(value: str) -> bool | None:
@@ -26,6 +33,13 @@ def parse_bool(value: str) -> bool | None:
     if normalized in {"false", "0", "fail", "failed", "no"}:
         return False
     return None
+
+
+def _parse_optional_int(value: str) -> int | None:
+    normalized = value.strip()
+    if normalized == "":
+        return None
+    return int(normalized)
 
 
 def parse_csv_log(file_path: str | Path) -> list[LogEvent]:
@@ -45,4 +59,11 @@ def parse_csv_rows(rows: Iterable[dict[str, str]]) -> Iterable[LogEvent]:
             status_code=int(row.get("status_code") or 0),
             username=row.get("username", "").strip(),
             login_success=parse_bool(row.get("login_success", "")),
+            method=row.get("method", "").strip(),
+            protocol=row.get("protocol", "").strip(),
+            host=row.get("host", "").strip(),
+            user_agent=row.get("user_agent", "").strip(),
+            bytes_sent=_parse_optional_int(row.get("bytes_sent", "")),
+            duration_ms=_parse_optional_int(row.get("duration_ms", "")),
+            tls_fingerprint=row.get("tls_fingerprint", "").strip(),
         )

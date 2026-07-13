@@ -1,21 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
 from datetime import timedelta
 
+from src.detector.models import Alert
 from src.parser.log_parser import LogEvent
 from src.scoring.risk import score_alert
-
-
-@dataclass(frozen=True)
-class Alert:
-    alert_type: str
-    source_ip: str
-    target: str
-    level: str
-    score: int
-    evidence: str
 
 
 SUSPICIOUS_PATH_KEYWORDS = (
@@ -55,11 +45,18 @@ def detect_port_scan(events: list[LogEvent], window_seconds: int = 60, min_ports
                 score, level = score_alert("port_scan", len(ports))
                 alerts.append(Alert(
                     alert_type="端口扫描",
+                    category="规则检测",
                     source_ip=source_ip,
                     target=target_ip,
                     level=level,
                     score=score,
+                    confidence=0.88,
                     evidence=f"{window_seconds} 秒内访问 {len(ports)} 个不同端口",
+                    rule_id="port_scan",
+                    count=len(ports),
+                    first_seen=start_event.timestamp,
+                    last_seen=max(event.timestamp for event in sorted_events[index:] if event.timestamp <= window_end),
+                    matched_fields=("source_ip", "target_ip", "port"),
                 ))
                 break
     return alerts
@@ -81,11 +78,18 @@ def detect_brute_force(events: list[LogEvent], window_seconds: int = 120, max_fa
                 score, level = score_alert("brute_force", count)
                 alerts.append(Alert(
                     alert_type="暴力登录",
+                    category="规则检测",
                     source_ip=source_ip,
                     target=username,
                     level=level,
                     score=score,
+                    confidence=0.9,
                     evidence=f"{window_seconds} 秒内账号 {username} 登录失败 {count} 次",
+                    rule_id="brute_force",
+                    count=count,
+                    first_seen=start_event.timestamp,
+                    last_seen=max(event.timestamp for event in sorted_events[index:] if event.timestamp <= window_end),
+                    matched_fields=("source_ip", "username", "login_success"),
                 ))
                 break
     return alerts
@@ -106,11 +110,18 @@ def detect_high_frequency_access(events: list[LogEvent], window_seconds: int = 6
                 score, level = score_alert("high_frequency", count)
                 alerts.append(Alert(
                     alert_type="异常访问频率",
+                    category="规则检测",
                     source_ip=source_ip,
                     target="multiple targets",
                     level=level,
                     score=score,
+                    confidence=0.82,
                     evidence=f"{window_seconds} 秒内产生 {count} 次请求",
+                    rule_id="high_frequency",
+                    count=count,
+                    first_seen=start_event.timestamp,
+                    last_seen=max(event.timestamp for event in sorted_events[index:] if event.timestamp <= window_end),
+                    matched_fields=("source_ip",),
                 ))
                 break
     return alerts
@@ -125,11 +136,18 @@ def detect_suspicious_paths(events: list[LogEvent]) -> list[Alert]:
             score, level = score_alert("suspicious_path", 1)
             alerts.append(Alert(
                 alert_type="可疑路径访问",
+                category="规则检测",
                 source_ip=event.source_ip,
                 target=event.path,
                 level=level,
                 score=score,
+                confidence=0.78,
                 evidence=f"请求路径命中可疑特征 {matched}",
+                rule_id="suspicious_path",
+                count=1,
+                first_seen=event.timestamp,
+                last_seen=event.timestamp,
+                matched_fields=("path",),
             ))
     return alerts
 
@@ -146,10 +164,17 @@ def detect_abnormal_status_codes(events: list[LogEvent], threshold: int = 8) -> 
             score, level = score_alert("abnormal_status", len(group))
             alerts.append(Alert(
                 alert_type="异常状态码",
+                category="规则检测",
                 source_ip=source_ip,
                 target=str(status_code),
                 level=level,
                 score=score,
+                confidence=0.8,
                 evidence=f"出现 {len(group)} 次 HTTP {status_code} 响应",
+                rule_id="abnormal_status",
+                count=len(group),
+                first_seen=min(event.timestamp for event in group),
+                last_seen=max(event.timestamp for event in group),
+                matched_fields=("status_code",),
             ))
     return alerts

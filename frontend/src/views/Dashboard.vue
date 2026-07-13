@@ -6,9 +6,9 @@
         <div class="card-label">日志总量</div>
         <div class="card-value">{{ ids.events || 0 }}</div>
       </div>
-      <div class="card high"><div class="card-label">高危</div><div class="card-value">{{ ids.summary?.高危 || 0 }}</div></div>
-      <div class="card medium"><div class="card-label">中危</div><div class="card-value">{{ ids.summary?.中危 || 0 }}</div></div>
-      <div class="card low"><div class="card-label">低危</div><div class="card-value">{{ ids.summary?.低危 || 0 }}</div></div>
+      <div class="card high"><div class="card-label">高危</div><div class="card-value">{{ levelCount('高危') }}</div></div>
+      <div class="card medium"><div class="card-label">中危</div><div class="card-value">{{ levelCount('中危') }}</div></div>
+      <div class="card low"><div class="card-label">低危</div><div class="card-value">{{ levelCount('低危') }}</div></div>
       <div class="card"><div class="card-label">总告警</div><div class="card-value">{{ ids.total_alerts || 0 }}</div></div>
       <div class="card"><div class="card-label">平均分</div><div class="card-value">{{ ids.avg_score || 0 }}</div></div>
     </div>
@@ -83,6 +83,10 @@ export default {
   methods: {
     fmtNum(n) { return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n) },
     fmtTime(s) { s = parseInt(s); const m = Math.floor(s/60); return m > 0 ? `${m}m ${s%60}s` : `${s}s` },
+    levelCount(level) {
+      const summary = this.ids?.summary || {}
+      return summary?.by_level?.[level] ?? summary?.[level] ?? 0
+    },
     initCharts() {
       this.pieChart = echarts.init(this.$refs.pieChart)
       this.sevChart = echarts.init(this.$refs.sevChart)

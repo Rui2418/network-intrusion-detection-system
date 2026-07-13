@@ -7,6 +7,7 @@ from src.parser.log_parser import parse_csv_log
 
 
 SAMPLE_LOG = Path(__file__).resolve().parents[1] / "data" / "sample_logs.csv"
+EXTENDED_SAMPLE_LOG = Path(__file__).resolve().parents[1] / "data" / "sample_logs_extended.csv"
 
 
 def test_sample_logs_generate_expected_alert_types():
@@ -27,6 +28,41 @@ def test_alerts_have_risk_levels():
     assert alerts
     assert all(alert.level in {"低危", "中危", "高危"} for alert in alerts)
     assert all(0 <= alert.score <= 100 for alert in alerts)
+
+
+def test_extended_sample_api_returns_rich_analysis_result():
+    with app.test_client() as client:
+        response = client.get("/api/sample")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["events"] > 0
+    assert "baseline" in data
+    assert "incidents" in data
+    assert "recommendations" in data
+    assert "by_type" in data["summary"]
+    assert "by_level" in data["summary"]
+    assert data["summary"]["高危"] == data["summary"]["by_level"]["高危"]
+
+
+def test_old_csv_upload_still_works():
+    content = SAMPLE_LOG.read_text(encoding="utf-8")
+    response = upload_csv(content)
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["events"] > 0
+    assert data["alerts"]
+    assert data["summary"]["by_level"]["中危"] >= 0
+
+
+def test_extended_parser_supports_optional_fields():
+    events = parse_csv_log(EXTENDED_SAMPLE_LOG)
+
+    assert any(event.user_agent for event in events)
+    assert any(event.bytes_sent is not None for event in events)
+    assert any(event.duration_ms is not None for event in events)
+    assert any(event.tls_fingerprint for event in events)
 
 
 def test_upload_rejects_invalid_timestamp():

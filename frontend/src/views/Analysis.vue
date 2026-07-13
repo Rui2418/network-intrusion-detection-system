@@ -19,9 +19,9 @@
 
     <div class="result-summary" v-if="lastResult">
       <div class="summary-card"><span>日志条目</span><strong>{{ lastResult.events }}</strong></div>
-      <div class="summary-card high"><span>高危</span><strong>{{ lastResult.summary?.高危 || 0 }}</strong></div>
-      <div class="summary-card medium"><span>中危</span><strong>{{ lastResult.summary?.中危 || 0 }}</strong></div>
-      <div class="summary-card low"><span>低危</span><strong>{{ lastResult.summary?.低危 || 0 }}</strong></div>
+      <div class="summary-card high"><span>高危</span><strong>{{ levelCount('高危') }}</strong></div>
+      <div class="summary-card medium"><span>中危</span><strong>{{ levelCount('中危') }}</strong></div>
+      <div class="summary-card low"><span>低危</span><strong>{{ levelCount('低危') }}</strong></div>
       <div class="summary-card"><span>告警总数</span><strong>{{ lastResult.alerts?.length || 0 }}</strong></div>
     </div>
 
@@ -54,6 +54,10 @@ export default {
   name: 'AnalysisPage',
   data() { return { lastResult: null, loading: false } },
   methods: {
+    levelCount(level) {
+      const summary = this.lastResult?.summary || {}
+      return summary?.by_level?.[level] ?? summary?.[level] ?? 0
+    },
     async loadSample() {
       this.loading = true
       try {

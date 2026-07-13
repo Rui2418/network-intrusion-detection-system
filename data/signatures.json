@@ -1,0 +1,52 @@
+[
+  {
+    "id": "sql_injection_basic",
+    "alert_type": "SQL注入尝试",
+    "category": "特征匹配",
+    "fields": ["path"],
+    "patterns": ["union select", "or 1=1", "information_schema", "sleep(", "select%20", "union%20select"],
+    "base_score": 60,
+    "confidence": 0.9,
+    "target_field": "path"
+  },
+  {
+    "id": "xss_basic",
+    "alert_type": "XSS尝试",
+    "category": "特征匹配",
+    "fields": ["path"],
+    "patterns": ["<script", "%3cscript", "javascript:", "onerror="],
+    "base_score": 55,
+    "confidence": 0.88,
+    "target_field": "path"
+  },
+  {
+    "id": "path_traversal",
+    "alert_type": "目录遍历尝试",
+    "category": "特征匹配",
+    "fields": ["path"],
+    "patterns": ["../", "..%2f", "/etc/passwd", ".git/config", "backup.zip"],
+    "base_score": 58,
+    "confidence": 0.86,
+    "target_field": "path"
+  },
+  {
+    "id": "webshell_command",
+    "alert_type": "恶意命令访问",
+    "category": "特征匹配",
+    "fields": ["path", "user_agent"],
+    "patterns": ["cmd.exe", "powershell", "whoami", "wget http", "curl http", "/shell"],
+    "base_score": 70,
+    "confidence": 0.93,
+    "target_field": "path"
+  },
+  {
+    "id": "c2_simulation",
+    "alert_type": "疑似控制信道",
+    "category": "特征匹配",
+    "fields": ["path", "user_agent", "tls_fingerprint"],
+    "patterns": ["/beacon", "/c2", "/heartbeat", "/cmd", "cobalt", "ja3-malware-demo"],
+    "base_score": 75,
+    "confidence": 0.95,
+    "target_field": "path"
+  }
+]

@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime, MINYEAR
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
-from flask_cors import CORS
-from flask_socketio import SocketIO
 
+try:
+    from flask_cors import CORS
+except ModuleNotFoundError:
+    def CORS(_app):
+        return _app
+
+from src.detector.anomaly import detect_anomalies
+from src.detector.correlation import correlate_alerts
+from src.detector.models import AnalysisResult, Alert, Incident
 from src.detector.rules import detect_attacks
+from src.detector.signatures import detect_signature_attacks
 from src.parser.log_parser import parse_csv_log, parse_csv_rows
 from src.utils.serialization import to_jsonable
 from src.defense import (
@@ -34,12 +43,31 @@ app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="/")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
-_last_analysis = {
-    "events": 0,
-    "alerts": [],
-    "summary": {"高危": 0, "中危": 0, "低危": 0},
-    "source": "",
-}
+_last_analysis = to_jsonable(AnalysisResult(
+    events=0,
+    alerts=[],
+    incidents=[],
+    summary={
+        "高危": 0,
+        "中危": 0,
+        "低危": 0,
+        "by_level": {"高危": 0, "中危": 0, "低危": 0},
+        "by_type": {},
+        "by_category": {},
+        "top_sources": [],
+        "top_targets": [],
+        "timeline": [],
+    },
+    baseline={
+        "request_rate_per_ip": [],
+        "unique_ports_per_ip": [],
+        "login_failures_per_ip": [],
+        "data_coverage": {"bytes_sent": False, "duration_ms": False, "tls_fingerprint": False},
+    },
+    metadata={"detectors": ["rule", "signature", "anomaly", "correlation"], "generated_at": ""},
+    source="",
+    recommendations=[],
+))
 
 
 @app.get("/")
@@ -53,15 +81,8 @@ def index():
 @app.get("/api/sample")
 def analyze_sample():
     global _last_analysis
-    events = parse_csv_log(DATA_DIR / "sample_logs.csv")
-    alerts = detect_attacks(events)
-    _last_analysis = {
-        "events": len(events),
-        "alerts": to_jsonable(alerts),
-        "summary": summarize_alerts(alerts),
-        "source": "示例数据",
-    }
-    socketio.emit('ids_update', get_alert_stats().get_json())
+    events = parse_csv_log(DATA_DIR / "sample_logs_extended.csv")
+    _last_analysis = analyze_events(events, source="示例数据")
     return jsonify(_last_analysis)
 
 
@@ -78,14 +99,7 @@ def analyze_upload():
     except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
         return jsonify({"error": f"CSV 日志格式错误：{exc}"}), 400
 
-    alerts = detect_attacks(events)
-    _last_analysis = {
-        "events": len(events),
-        "alerts": to_jsonable(alerts),
-        "summary": summarize_alerts(alerts),
-        "source": uploaded.filename,
-    }
-    socketio.emit('ids_update', get_alert_stats().get_json())
+    _last_analysis = analyze_events(events, source=uploaded.filename)
     return jsonify(_last_analysis)
 
 
@@ -128,15 +142,21 @@ def get_alert_stats():
 
     top_sources = sorted(source_counts.items(), key=lambda x: -x[1])[:5]
 
+    summary = _last_analysis.get("summary", {})
     return jsonify({
         "events": _last_analysis.get("events", 0),
         "total_alerts": len(alerts),
-        "summary": _last_analysis.get("summary", {}),
-        "type_counts": type_counts,
-        "severity_counts": severity_counts,
-        "top_sources": [{"ip": ip, "count": c} for ip, c in top_sources],
+        "summary": summary,
+        "type_counts": summary.get("by_type", type_counts),
+        "severity_counts": summary.get("by_level", severity_counts),
+        "top_sources": [
+            {"ip": item.get("source_ip", "未知"), "count": item.get("count", 0)}
+            for item in summary.get("top_sources", [])
+        ] or [{"ip": ip, "count": c} for ip, c in top_sources],
         "avg_score": round(total_score / len(alerts), 1) if alerts else 0,
         "source": _last_analysis.get("source", ""),
+        "by_category": summary.get("by_category", {}),
+        "timeline": summary.get("timeline", []),
     })
 
 
@@ -154,11 +174,109 @@ def get_recent_alerts():
     })
 
 
-def summarize_alerts(alerts):
-    summary = {"高危": 0, "中危": 0, "低危": 0}
+def analyze_events(events, source: str) -> dict[str, object]:
+    rule_alerts = detect_attacks(events)
+    signature_alerts = detect_signature_attacks(events)
+    anomaly_alerts, baseline = detect_anomalies(events)
+    alerts = sorted(
+        [*rule_alerts, *signature_alerts, *anomaly_alerts],
+        key=lambda item: item.first_seen or item.last_seen or datetime(MINYEAR, 1, 1),
+    )
+    incidents = correlate_alerts(alerts)
+    summary = summarize_alerts(alerts)
+    result = AnalysisResult(
+        events=len(events),
+        alerts=alerts,
+        incidents=incidents,
+        summary=summary,
+        baseline=baseline,
+        metadata={
+            "detectors": ["rule", "signature", "anomaly", "correlation"],
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        source=source,
+        recommendations=build_recommendations(alerts, incidents),
+    )
+    return to_jsonable(result)
+
+
+def summarize_alerts(alerts: list[Alert]) -> dict[str, object]:
+    by_level = {"高危": 0, "中危": 0, "低危": 0}
+    by_type: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    source_counts: dict[str, int] = {}
+    target_counts: dict[str, int] = {}
+    timeline: dict[str, int] = {}
+
     for alert in alerts:
-        summary[alert.level] = summary.get(alert.level, 0) + 1
-    return summary
+        by_level[alert.level] = by_level.get(alert.level, 0) + 1
+        by_type[alert.alert_type] = by_type.get(alert.alert_type, 0) + 1
+        by_category[alert.category] = by_category.get(alert.category, 0) + 1
+        source_counts[alert.source_ip] = source_counts.get(alert.source_ip, 0) + 1
+        target_counts[alert.target] = target_counts.get(alert.target, 0) + 1
+        timestamp = alert.first_seen or alert.last_seen
+        if timestamp is not None:
+            key = timestamp.isoformat(timespec="seconds")
+            timeline[key] = timeline.get(key, 0) + 1
+
+    return {
+        "高危": by_level.get("高危", 0),
+        "中危": by_level.get("中危", 0),
+        "低危": by_level.get("低危", 0),
+        "by_level": by_level,
+        "by_type": by_type,
+        "by_category": by_category,
+        "top_sources": [
+            {"source_ip": source_ip, "count": count}
+            for source_ip, count in sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ],
+        "top_targets": [
+            {"target": target, "count": count}
+            for target, count in sorted(target_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ],
+        "timeline": [
+            {"timestamp": timestamp, "count": count}
+            for timestamp, count in sorted(timeline.items())
+        ],
+    }
+
+
+def build_recommendations(alerts: list[Alert], incidents: list[Incident]) -> list[dict[str, object]]:
+    recommendations: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for incident in incidents:
+        for action in incident.recommended_actions:
+            key = (incident.source_ip, action)
+            if key in seen:
+                continue
+            seen.add(key)
+            recommendations.append({
+                "source_ip": incident.source_ip,
+                "action": action,
+                "reason": incident.evidence,
+                "severity": incident.level,
+                "score": incident.score,
+                "stages": list(incident.stages),
+            })
+
+    for alert in alerts:
+        if alert.level != "高危":
+            continue
+        key = (alert.source_ip, alert.alert_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        recommendations.append({
+            "source_ip": alert.source_ip,
+            "action": "加入高风险观察名单",
+            "reason": alert.evidence,
+            "severity": alert.level,
+            "score": alert.score,
+            "alert_type": alert.alert_type,
+        })
+
+    return recommendations
 
 
 @app.get("/api/dashboard")

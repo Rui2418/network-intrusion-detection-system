@@ -5,11 +5,7 @@
       <div class="filters">
         <select v-model="filterType" @change="fetchAlerts">
           <option value="">全部类型</option>
-          <option value="端口扫描">端口扫描</option>
-          <option value="暴力登录">暴力登录</option>
-          <option value="异常访问频率">异常访问频率</option>
-          <option value="可疑路径访问">可疑路径访问</option>
-          <option value="异常状态码">异常状态码</option>
+          <option v-for="type in availableTypes" :key="type" :value="type">{{ type }}</option>
         </select>
         <select v-model="filterSev" @change="fetchAlerts">
           <option value="">全部等级</option>
@@ -82,13 +78,7 @@ const TYPE_COLORS = {
 
 export default {
   name: 'AlertsPage',
-  data() {
-    return {
-      alerts: [], total: 0, filterType: '', filterSev: '',
-      showModal: false, analyzing: null, blocking: null,
-      aiResult: '', analyzeTarget: null,
-    }
-  },
+  data() { return { alerts: [], total: 0, filterType: '', filterSev: '', availableTypes: [] } },
   methods: {
     typeColor(t) { return TYPE_COLORS[t] || '#607d8b' },
     async fetchAlerts() {
@@ -97,7 +87,9 @@ export default {
       if (this.filterSev) p.severity = this.filterSev
       try {
         const { data } = await axios.get('/api/alerts', { params: p })
-        this.alerts = data.items; this.total = data.total
+        this.alerts = data.items
+        this.total = data.total
+        this.availableTypes = Array.from(new Set((data.items || []).map(item => item.alert_type).filter(Boolean)))
       } catch (e) {}
     },
     async analyzeAlert(alert, idx) {

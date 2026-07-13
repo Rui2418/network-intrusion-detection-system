@@ -1,160 +1,201 @@
-# 常见网络攻击的检测系统
+# 常见网络攻击的检测与防御系统
 
-## 项目简介
+本项目是《信息安全科技创新》课程的教学型安全实验项目，目标是围绕一个简单 Web 应用场景，完成常见网络攻击行为的检测、分析、关联、展示与基础响应联动。当前实现以日志驱动的 IDS 为主，同时包含一个面向 Linux 内核模块的 IPS/防御联动接口层，便于课程展示从“检测”到“响应”的完整流程。
 
-本项目是《信息安全科技创新》课程设计项目，目标是设计并实现一个面向常见网络攻击行为的轻量级检测系统。系统通过对网络流量记录、服务访问日志或模拟安全事件数据进行分析，识别端口扫描、暴力登录、异常访问频率、可疑请求等典型攻击行为，并以告警列表和统计图表的形式展示检测结果。
+## 项目定位
 
-项目重点关注信息安全中的检测与响应环节，帮助用户理解常见网络攻击的行为特征，以及如何通过日志分析、规则匹配和风险评分等方式发现潜在安全威胁。
+这个项目不是工业级商用 IDS/IPS，也不依赖实时抓包驱动、复杂分布式架构或重型机器学习模型。它更适合作为课程答辩和实验演示原型，强调以下几点：
 
-## 项目背景
+- 能清楚展示常见网络攻击的行为特征。
+- 能通过结构化日志进行规则检测、误用检测/特征库匹配和基础异常检测。
+- 能输出可解释的告警结果、风险等级、置信度、基线统计和攻击链事件。
+- 能根据高风险告警和攻击链事件生成限流、封禁、账户锁定等响应建议，并为 IPS 式主动响应提供接口和架构基础。
 
-随着网络应用和信息系统的广泛使用，端口扫描、暴力破解、异常请求、恶意访问等常见攻击行为对系统的机密性、完整性和可用性造成威胁。对于中小型网络环境或教学实验场景而言，构建一个轻量级、可演示、易理解的攻击检测系统，有助于提升对网络安全威胁的认识和分析能力。
+## 当前已实现功能
 
-本项目围绕信息安全中的网络安全、系统安全和信息保障展开，通过软件工程方法完成需求分析、总体设计、详细设计、代码实现和测试，最终形成可运行的软件系统和项目文档。
+### 1. 日志导入与解析
 
-## 项目目标
+系统支持加载内置扩展示例日志，或上传 CSV 日志文件进行分析。CSV 解析流程保留基础字段，同时支持课程演示所需的扩展字段。
 
-- 实现日志或流量数据的导入与解析。
-- 识别常见网络攻击行为，例如端口扫描、暴力登录和异常访问。
-- 根据攻击类型、访问频率和影响范围进行风险评分。
-- 展示检测结果、告警信息和统计数据。
-- 支持导出检测结果或生成简要检测报告。
-- 形成完整的课程项目材料，包括源码、设计文档、测试结果和演示内容。
+基础字段：
 
-## 主要功能
+- `timestamp`
+- `source_ip`
+- `target_ip`
+- `port`
+- `path`
+- `status_code`
+- `username`
+- `login_success`
 
-### 数据导入
+可选扩展字段：
 
-系统支持导入网络访问日志、登录日志或模拟流量数据，并提取其中的时间、源 IP、目标 IP、端口、请求路径、状态码、登录结果等字段。
+- `method`
+- `protocol`
+- `host`
+- `user_agent`
+- `bytes_sent`
+- `duration_ms`
+- `tls_fingerprint`
 
-### 数据解析
+对应代码见 [src/parser/log_parser.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/parser/log_parser.py) 和 [src/app.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/app.py)。
 
-系统对输入数据进行格式化处理，将原始日志转换为统一的数据结构，为后续检测规则提供输入。
+### 2. IDS 检测能力与特征库
 
-### 攻击检测
+当前后端已经实现一组教学演示型检测规则、误用检测特征库和异常检测模块，用于识别常见攻击或异常访问行为，包括：
 
-系统计划支持以下常见攻击行为检测：
+- 端口扫描
+- 暴力登录
+- 可疑路径访问
+- 异常状态码集中出现
+- 异常访问频率
+- SQL 注入尝试
+- XSS 尝试
+- 目录遍历与敏感文件访问
+- WebShell / 恶意命令访问
+- 疑似控制信道
+- 外部来源访问内网
+- TLS 指纹异常
+- 疑似密码喷洒
+- 疑似横向移动
+- 大流量或长会话异常
 
-- **端口扫描检测**：识别同一源 IP 在短时间内访问多个目标端口的行为。
-- **暴力登录检测**：识别同一账号或同一源 IP 在短时间内多次登录失败的行为。
-- **异常访问频率检测**：识别单位时间内请求数量明显异常的访问行为。
-- **可疑路径访问检测**：识别对后台管理路径、敏感文件或常见漏洞路径的访问行为。
-- **异常状态码检测**：识别大量 401、403、404、500 等异常响应状态码。
+规则检测入口在 [src/detector/rules.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/detector/rules.py)，特征库检测入口在 [src/detector/signatures.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/detector/signatures.py)，异常检测入口在 [src/detector/anomaly.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/detector/anomaly.py)。内置特征库位于 [data/signatures.json](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/data/signatures.json)，示例测试覆盖见 [tests/test_detection.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/tests/test_detection.py) 和 [tests/test_signatures.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/tests/test_signatures.py)。
 
-### 风险评分
+### 3. 风险评分、基线与攻击链关联
 
-系统根据攻击类型、触发次数、时间窗口、影响范围等因素计算风险等级，将告警划分为低危、中危和高危，便于用户快速判断事件严重程度。
+系统会根据检测结果为告警计算分数，并划分为 `低危`、`中危`、`高危` 三类风险等级。分析结果还会返回批内基线统计，例如每个来源 IP 的访问量、多端口访问情况、登录失败次数，以及扩展字段覆盖情况。
 
-### 结果展示
+攻击链关联模块会按来源 IP 汇总扫描、初始访问、凭据攻击、横向移动、执行或控制等阶段。当同一来源触发两个及以上阶段时，系统会生成 `incidents` 事件，并输出对应的 `recommendations` 响应建议。
 
-系统通过页面或命令行输出展示检测结果，包括告警时间、攻击类型、源 IP、目标对象、风险等级和检测依据。
+风险评分相关实现位于 [src/scoring/risk.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/scoring/risk.py)，攻击链关联实现位于 [src/detector/correlation.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/detector/correlation.py)，统一结果模型位于 [src/detector/models.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/detector/models.py)。
 
-### 结果导出
+### 4. Web 界面与分析接口
 
-系统支持将检测结果导出为文本、CSV 或 JSON 文件，便于后续分析和课程报告整理。
+项目提供 Flask Web 服务，支持页面访问和 JSON API 调用。当前后端已提供：
 
-## 技术路线
+- `GET /api/sample`：分析内置示例日志
+- `POST /api/analyze`：上传 CSV 日志并分析
+- `GET /api/alerts`：按条件筛选告警
+- `GET /api/alerts/stats`：获取统计信息
+- `GET /api/alerts/recent`：获取最近告警
+- `GET /api/dashboard`：聚合 IDS 与防御模块状态
 
-项目当前采用以下技术方案：
+`GET /api/sample` 和 `POST /api/analyze` 会返回统一分析结果，主要字段包括：
 
-- 后端语言：Python
-- Web 框架：Flask
-- 前端技术：HTML、CSS、JavaScript
-- 数据处理：规则匹配、时间窗口统计
-- 数据格式：CSV
-- 可视化展示：告警表格和统计卡片
+```json
+{
+  "events": 0,
+  "alerts": [],
+  "incidents": [],
+  "summary": {
+    "by_level": {},
+    "by_type": {},
+    "by_category": {},
+    "top_sources": [],
+    "top_targets": [],
+    "timeline": []
+  },
+  "baseline": {
+    "request_rate_per_ip": [],
+    "unique_ports_per_ip": [],
+    "login_failures_per_ip": [],
+    "data_coverage": {}
+  },
+  "metadata": {},
+  "source": "",
+  "recommendations": []
+}
+```
 
-后续可根据项目进度选择是否引入 ECharts、SQLite、登录认证和报告导出等功能。
+主应用入口见 [run.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/run.py) 和 [src/app.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/app.py)。
 
-## 系统流程
+### 5. IPS / 防御扩展接口
 
-1. 用户导入日志文件或使用系统内置测试数据。
-2. 系统解析日志，提取关键字段。
-3. 检测模块按照规则分析异常行为。
-4. 风险评分模块计算告警等级。
-5. 系统展示检测结果和统计信息。
-6. 用户导出检测结果或生成报告。
+仓库中已经包含一个防御接口层 [src/defense.py](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/src/defense.py)，并在后端暴露了规则管理、状态查询和统计接口，例如：
+
+- `GET /api/defense/status`
+- `POST /api/defense/enable`
+- `GET /api/defense/rules`
+- `POST /api/defense/rules`
+- `PUT /api/defense/rules/<id>`
+- `DELETE /api/defense/rules/<id>`
+- `GET /api/defense/stats`
+- `PUT /api/defense/default-policy`
+
+这部分当前主要用于教学型联动演示。在非 Linux 环境或没有对应内核设备时，会回退到模拟状态，不应理解为完整可部署的生产级防火墙系统。
+
+## 适合课程汇报的系统设计表达
+
+从课程项目角度，可以将本系统描述为三层：
+
+1. **业务与数据产生层**
+   一个简单 Web 站点或模拟业务服务，负责产生访问日志、登录日志和异常行为样本。
+2. **安全检测与分析层**
+   对日志进行解析、规则检测、特征库匹配、异常检测、风险评分、基线统计和攻击链关联，形成 IDS 告警和事件结果。
+3. **结果展示与响应扩展层**
+   通过 Web 页面和 API 展示分析结果，并预留防御规则管理与默认策略控制接口，支撑后续 IPS 扩展。
 
 ## 项目结构
-
-当前基础框架如下：
 
 ```text
 network intrusion detection system/
 ├── README.md
-├── requirements.txt       # Python 依赖
-├── run.py                 # Web 应用启动入口
-├── pytest.ini             # 测试配置
-├── data/                  # 示例日志和测试数据
-│   └── sample_logs.csv
-├── src/                   # 源代码
-│   ├── app.py             # Flask 应用和 API
-│   ├── parser/            # 日志解析模块
-│   ├── detector/          # 攻击检测规则模块
-│   ├── scoring/           # 风险评分模块
-│   ├── static/            # 前端脚本和样式
-│   ├── templates/         # 页面模板
-│   └── utils/             # 通用工具函数
-└── tests/                 # 测试代码
+├── requirements.txt
+├── pytest.ini
+├── run.py
+├── data/
+│   ├── sample_logs.csv
+│   ├── sample_logs_extended.csv
+│   └── signatures.json
+├── kernel_module/              # Linux 内核防御模块相关内容
+├── frontend/                   # Vue 前端工程与构建产物
+├── src/
+│   ├── app.py                  # Flask 应用与 API
+│   ├── defense.py              # 防御接口封装
+│   ├── detector/
+│   │   ├── anomaly.py          # 异常检测与基线统计
+│   │   ├── correlation.py      # 攻击链关联与响应建议
+│   │   ├── models.py           # 告警、事件和分析结果模型
+│   │   ├── rules.py            # IDS 规则检测
+│   │   └── signatures.py       # 误用检测/特征库匹配
+│   ├── parser/
+│   │   └── log_parser.py       # CSV 日志解析
+│   ├── scoring/
+│   │   └── risk.py             # 风险评分
+│   ├── static/                 # 传统模板前端资源
+│   ├── templates/              # Flask 模板
+│   └── utils/
+│       └── serialization.py    # 序列化工具
+└── tests/
+    ├── conftest.py
+    ├── test_detection.py
+    └── test_signatures.py
 ```
 
-## 检测规则设计
+## 运行环境
 
-### 端口扫描
+### 软件要求
 
-在指定时间窗口内，如果同一源 IP 访问同一目标主机的多个不同端口，且端口数量超过阈值，则判定为疑似端口扫描行为。
+- Python 3.10 及以上
+- Flask
+- flask-cors
+- pytest
 
-### 暴力登录
+当前 Python 依赖见 [requirements.txt](C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/requirements.txt)。
 
-在指定时间窗口内，如果同一源 IP 或同一账号出现多次登录失败，且失败次数超过阈值，则判定为疑似暴力登录行为。
+### 硬件与系统建议
 
-### 异常访问频率
+- Windows 10/11 或 Linux
+- 至少 8 GB 内存
+- 现代浏览器（Chrome / Edge）
 
-在指定时间窗口内，如果同一源 IP 的请求次数明显超过正常范围，则判定为异常高频访问行为。
+说明：
 
-### 可疑路径访问
+- 纯 IDS 日志分析部分可以在 Windows 或 Linux 上运行。
+- `src/defense.py` 对应的防御联动更偏向 Linux 环境；在其他环境下默认以模拟状态返回。
 
-如果请求路径包含常见敏感路径或攻击特征，例如 `/admin`、`/login`、`.env`、`/phpmyadmin` 等，则记录为可疑访问事件。
-
-## 预期成果
-
-- 一个可运行的常见网络攻击检测系统。
-- 支持导入、解析、检测、告警展示和结果导出。
-- 一组用于演示和测试的样例日志数据。
-- 项目源码和使用说明。
-- 总体设计报告、结题报告和演示 PPT。
-
-## 小组分工建议
-
-- 组长与总体设计：负责需求分析、总体架构、进度协调和报告整合。
-- 日志解析模块：负责日志格式设计、字段提取和数据标准化。
-- 攻击检测模块：负责端口扫描、暴力登录、异常访问等检测规则。
-- 前端展示模块：负责检测结果页面、告警列表和统计图表。
-- 测试与文档：负责测试数据、功能测试、演示材料和项目归档。
-
-## 开发计划
-
-### 第一阶段：选题与需求分析
-
-确定项目范围、检测类型、技术路线和小组分工，完成选题表。
-
-### 第二阶段：总体设计
-
-完成系统架构设计、模块划分、数据格式设计和检测规则设计。
-
-### 第三阶段：系统实现
-
-实现日志解析、攻击检测、风险评分、结果展示和导出功能。
-
-### 第四阶段：测试与优化
-
-使用样例数据测试检测效果，调整规则阈值，完善页面展示和报告输出。
-
-### 第五阶段：结题与汇报
-
-整理源码、测试结果、设计文档、结题报告和演示 PPT。
-
-## 运行方式
+## 快速开始
 
 安装依赖：
 
@@ -162,27 +203,96 @@ network intrusion detection system/
 python -m pip install -r requirements.txt
 ```
 
-启动 Web 应用：
+启动后端：
 
 ```bash
 python run.py
 ```
 
-启动后在浏览器访问 Flask 输出的本地地址，进入页面后可以点击“加载示例数据”查看检测结果，也可以上传符合字段格式的 CSV 日志文件。
+启动后访问浏览器中的本地 Flask 地址，加载示例数据或上传 CSV 文件即可查看检测结果。
 
-运行测试：
+## 测试
+
+运行自动化测试：
 
 ```bash
 python -m pytest
 ```
 
-CSV 日志字段格式如下：
+当前测试重点覆盖：
+
+- 示例日志是否能触发预期告警类型
+- 告警是否具备有效风险等级与分数
+- 非法时间戳和非法端口是否会被接口拒绝
+- 扩展示例是否返回 `baseline`、`incidents`、`recommendations` 和新 `summary` 结构
+- 旧格式 CSV 上传是否仍可兼容
+- 可选扩展字段是否能被正确解析
+- SQL 注入、XSS、目录遍历、恶意命令和疑似控制信道等特征库规则是否命中
+
+## CSV 输入格式
+
+最小可用字段格式如下，旧格式 CSV 仍可上传分析：
 
 ```text
 timestamp,source_ip,target_ip,port,path,status_code,username,login_success
 2026-07-08T10:00:00,192.168.1.20,10.0.0.5,80,/index,200,,
 ```
 
-## 说明
+其中：
 
-本项目仅用于课程学习、教学演示和防御性安全研究，检测规则和样例数据均用于帮助理解常见网络攻击行为特征，不用于未授权的网络探测、攻击或其他违规用途。
+- `timestamp` 使用 ISO 风格时间字符串
+- `port` 和 `status_code` 需要能转换为数字
+- `login_success` 用于描述登录是否成功
+
+扩展字段格式如下，适合展示异常检测、TLS 指纹模拟和基线覆盖情况：
+
+```text
+timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint
+2026-07-08T10:04:00,198.51.100.88,10.0.0.42,443,"/search?q=1%20union%20select%20username,password%20from%20users",500,,,GET,tcp,app.lab,sqlmap-demo,5400,420,ja3-browser
+```
+
+其中：
+
+- `method`、`protocol`、`host`、`user_agent` 用于描述请求方法、协议、主机名和客户端特征。
+- `bytes_sent` 和 `duration_ms` 用于检测大流量或长会话异常，留空时不会影响基础分析。
+- `tls_fingerprint` 用于模拟 TLS 指纹异常检测，留空时不会影响基础分析。
+
+## 当前仓库状态说明
+
+当前仓库已经具备一个可以运行的课程演示版本，重点完成了：
+
+- Flask 后端接口
+- CSV 日志解析
+- 基础 IDS 检测规则
+- 误用检测特征库
+- 异常检测与基线统计
+- 攻击链关联事件
+- 风险评分
+- 响应建议输出
+- 页面展示与统计接口
+- 防御模块 API 壳层
+- pytest 自动化测试
+
+同时，项目还保留了继续增强实时数据采集、响应联动展示和前端可视化细节的空间。
+
+## 建议的后续完善方向
+
+如果按课程答辩标准继续增强，下一步比较有价值的方向是：
+
+- 增加实时日志采集或抓包接入，把当前 CSV 批处理分析扩展为准实时分析。
+- 优化前端仪表盘，把攻击链时间线、基线偏离趋势和响应建议展示得更直观。
+- 将 IDS 告警结果与 IPS 规则启停逻辑做更清晰的一键联动展示。
+- 增加更多正常流量样本，用于对比异常检测阈值和误报情况。
+- 完善实验报告中的测试矩阵，把每类攻击样例、预期告警和实际结果整理成表格。
+
+## 小组分工
+
+- **成员 1（组长）：总体设计、攻击样例统筹模拟与系统集成**。负责需求分析、总体架构、模块接口定义、进度协调，统筹 SQL 注入、XSS、暴力登录、敏感路径探测等攻击样例构造与检测验证方案，并负责最后的系统整合与报告汇总。
+- **成员 2：模拟网站与业务功能**。负责登录页面、普通页面、搜索接口、受限资源页面等业务功能实现，并保证网站能够产生访问日志和认证日志。
+- **成员 3：日志解析与数据预处理**。负责 CSV 日志格式设计、字段提取、数据清洗、标准化处理和结构化事件输出。
+- **成员 4：攻击检测、风险评分与防御响应分析**。负责误用检测规则、异常检测逻辑、风险评分、攻击链关联分析，以及高风险事件对应的限流、封禁、账户锁定等主动响应策略设计，是 IDS/IPS 核心分析与响应模块的主要负责人。
+- **成员 5：前端展示、结果整理与答辩材料制作**。负责可视化界面、告警结果展示、实验截图、结果整理，以及演示脚本和答辩材料制作。
+
+## 安全与用途声明
+
+本项目仅用于课程学习、教学演示和防御性安全研究。仓库中的检测规则、样例数据和防御接口用于帮助理解常见网络攻击检测与响应机制，不用于未授权攻击、渗透破坏或其他违规用途。
