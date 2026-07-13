@@ -1,6 +1,6 @@
 import json
-import time
-from typing import Optional
+import os
+from pathlib import Path
 
 try:
     import requests
@@ -8,47 +8,152 @@ try:
 except ImportError:
     _HTTP_OK = False
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-DEFAULT_MODEL = "qwen2.5:3b"
-_available_cache = {"checked": False, "available": False, "model": ""}
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "llm_config.json"
+DEFAULT_CONFIG = {
+    "provider": "ollama",
+    "api_url": "http://localhost:11434",
+    "api_key": "",
+    "model": "qwen2.5:3b",
+    "enabled": True,
+}
 
+def _load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                return {**DEFAULT_CONFIG, **cfg}
+        except (json.JSONDecodeError, IOError):
+            pass
+    _save_config(DEFAULT_CONFIG)
+    return dict(DEFAULT_CONFIG)
 
-def is_available() -> bool:
+def _save_config(cfg: dict):
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+def get_config() -> dict:
+    return _load_config()
+
+def update_config(cfg: dict):
+    current = _load_config()
+    current.update({k: v for k, v in cfg.items() if k in DEFAULT_CONFIG})
+    _save_config(current)
+
+def test_connection(cfg: dict = None) -> dict:
+    if cfg is None:
+        cfg = _load_config()
     if not _HTTP_OK:
-        return False
-    if _available_cache["checked"]:
-        return _available_cache["available"]
+        return {"ok": False, "error": "requests 库未安装"}
+
+    provider = cfg.get("provider", "ollama")
+    api_url = cfg.get("api_url", "").rstrip("/")
+    api_key = cfg.get("api_key", "")
+    model = cfg.get("model", "qwen2.5:3b")
+
     try:
-        resp = requests.get("http://localhost:11434/api/tags", timeout=3)
-        if resp.status_code == 200:
-            models = resp.json().get("models", [])
-            _available_cache["available"] = len(models) > 0
-            _available_cache["model"] = models[0]["name"] if models else ""
-            _available_cache["checked"] = True
-            return _available_cache["available"]
-    except Exception:
-        pass
-    _available_cache["checked"] = True
-    _available_cache["available"] = False
-    return False
+        if provider == "ollama":
+            resp = requests.get(f"{api_url}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                models = resp.json().get("models", [])
+                names = [m.get("name", "") for m in models]
+                if model in names:
+                    return {"ok": True, "provider": "ollama", "model": model}
+                if names:
+                    return {"ok": True, "provider": "ollama", "model": names[0], "hint": f"模型 {model} 不存在，可用: {names[0]}"}
+                return {"ok": True, "provider": "ollama", "model": "none", "hint": "无可用模型，请先 ollama pull 下载"}
+            return {"ok": False, "error": f"HTTP {resp.status_code}"}
 
+        elif provider == "openai":
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            resp = requests.post(
+                f"{api_url}/chat/completions",
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "回复OK"}],
+                    "max_tokens": 10,
+                },
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return {"ok": True, "provider": "openai", "model": model}
+            err = resp.json().get("error", {}).get("message", f"HTTP {resp.status_code}")
+            return {"ok": False, "error": err}
 
-def _call_ollama(prompt: str) -> Optional[str]:
-    if not _HTTP_OK or not is_available():
+        else:
+            return {"ok": False, "error": f"未知 provider: {provider}"}
+    except requests.ConnectionError:
+        return {"ok": False, "error": f"无法连接到 {api_url}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def _call_llm(prompt: str) -> str or None:
+    cfg = _load_config()
+    if not cfg.get("enabled", True):
         return None
-    model = _available_cache["model"] or DEFAULT_MODEL
+    if not _HTTP_OK:
+        return None
+
+    provider = cfg.get("provider", "ollama")
+    api_url = cfg.get("api_url", "").rstrip("/")
+    api_key = cfg.get("api_key", "")
+    model = cfg.get("model", "qwen2.5:3b")
+
     try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={"model": model, "prompt": prompt, "stream": False},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            return resp.json().get("response", "").strip()
+        if provider == "ollama":
+            resp = requests.post(
+                f"{api_url}/api/generate",
+                json={"model": model, "prompt": prompt, "stream": False},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return resp.json().get("response", "").strip()
+
+        elif provider == "openai":
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            resp = requests.post(
+                f"{api_url}/chat/completions",
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception:
         pass
     return None
 
+def is_available() -> bool:
+    return test_connection().get("ok", False)
+
+def _fallback_analyze(alert: dict) -> str:
+    alert_type = alert.get("alert_type", "未知")
+    source_ip = alert.get("source_ip", "未知")
+    target = alert.get("target", "未知")
+    suggestions = {
+        "端口扫描": "攻击者正在探测目标主机开放的服务端口，属于侦察阶段。建议立即在防火墙中阻断来源IP的所有入站流量，并检查目标主机上非必要服务是否已关闭。",
+        "暴力登录": f"攻击者通过反复尝试密码来猜测目标账号 {target} 的凭据。建议立即封锁来源IP {source_ip}，检查目标账号的登录日志，启用密码复杂度策略和账号锁定策略。",
+        "异常访问频率": f"来源IP {source_ip} 的请求频率显著超出正常范围，可能在进行爬虫、暴力枚举或DoS准备。建议对该IP进行限速或临时封禁，分析其请求模式以确定攻击意图。",
+        "可疑路径访问": f"检测到对敏感路径 {target} 的访问，可能是攻击者在探测Web应用漏洞。建议检查该路径是否存在安全风险，确认Web服务器配置已正确限制敏感目录访问。",
+        "异常状态码": f"大量异常HTTP状态码表明请求被服务器拒绝或目标资源不存在，可能为目录暴力枚举或漏洞扫描。建议拦截持续产生404/403/500的IP，并审查访问日志。",
+    }
+    key = alert_type if alert_type in suggestions else "异常访问频率"
+    cfg = _load_config()
+    provider_name = "Ollama" if cfg["provider"] == "ollama" else "OpenAI"
+    return f"""【攻击分析】{key}的自动化分析（{provider_name} 模型不可用，以下为专家规则建议）：
+{suggestions.get(key, suggestions['异常访问频率'])}
+
+【处置建议】在IPS中创建规则：DROP 来自 {source_ip} 的流量。
+【后续观察】持续监控 {source_ip} 的后续行为，如发现新的攻击特征及时告警。"""
 
 def analyze_alert(alert: dict) -> str:
     alert_type = alert.get("alert_type", "未知")
@@ -71,25 +176,8 @@ def analyze_alert(alert: dict) -> str:
 【处置建议】具体的防御措施（如阻断IP、限制端口等）
 【后续观察】建议监控的重点"""
 
-    result = _call_ollama(prompt)
-    if result:
-        return result
-
-    suggestions = {
-        "端口扫描": "攻击者正在探测目标主机开放的服务端口，属于侦察阶段。建议立即在防火墙中阻断来源IP的所有入站流量，并检查目标主机上非必要服务是否已关闭。",
-        "暴力登录": f"攻击者通过反复尝试密码来猜测目标账号 {target} 的凭据。建议立即封锁来源IP {source_ip}，检查目标账号的登录日志，启用密码复杂度策略和账号锁定策略。",
-        "异常访问频率": f"来源IP {source_ip} 的请求频率显著超出正常范围，可能在进行爬虫、暴力枚举或DoS准备。建议对该IP进行限速或临时封禁，分析其请求模式以确定攻击意图。",
-        "可疑路径访问": f"检测到对敏感路径 {target} 的访问，可能是攻击者在探测Web应用漏洞。建议检查该路径是否存在安全风险，确认Web服务器配置已正确限制敏感目录访问。",
-        "异常状态码": f"大量异常HTTP状态码表明请求被服务器拒绝或目标资源不存在，可能为目录暴力枚举或漏洞扫描。建议拦截持续产生404/403/500的IP，并审查访问日志。",
-    }
-
-    key = alert_type if alert_type in suggestions else "异常访问频率"
-    return f"""【攻击分析】{key}的自动化分析（AI模型暂不可用，以下为专家规则建议）：
-{suggestions.get(key, suggestions['异常访问频率'])}
-
-【处置建议】在IPS中创建规则：DROP 来自 {source_ip} 的流量。
-【后续观察】持续监控 {source_ip} 的后续行为，如发现新的攻击特征及时告警。"""
-
+    result = _call_llm(prompt)
+    return result if result else _fallback_analyze(alert)
 
 def suggest_defense(alert: dict) -> dict:
     alert_type = alert.get("alert_type", "未知")
@@ -106,10 +194,11 @@ JSON格式:
 
 规则:"""
 
-    result = _call_ollama(prompt)
+    result = _call_llm(prompt)
     if result:
         try:
-            return {"rule": json.loads(result.strip().lstrip("```json").rstrip("```").strip()), "ai_generated": True}
+            cleaned = result.strip().lstrip("```json").rstrip("```").strip()
+            return {"rule": json.loads(cleaned), "ai_generated": True}
         except json.JSONDecodeError:
             pass
 
@@ -128,7 +217,6 @@ JSON格式:
         "ai_generated": False,
         "reason": f"基于{alert_type}告警自动生成的防御规则",
     }
-
 
 def analyze_attack_chain(alerts: list) -> str:
     if not alerts:
@@ -150,7 +238,7 @@ def analyze_attack_chain(alerts: list) -> str:
 
 请描述攻击者可能的攻击阶段（侦察→渗透→提权→横向移动→目标达成）和关键事件。"""
 
-    result = _call_ollama(prompt)
+    result = _call_llm(prompt)
     if result:
         return result
 
@@ -175,7 +263,7 @@ def analyze_attack_chain(alerts: list) -> str:
     if not stages:
         stages.append("⚠ 告警类型分散，建议逐条审查以确定攻击模式")
 
-    chain = """【攻击链推演】（AI模型暂不可用，基于规则统计推断）
+    chain = f"""【攻击链推演】（AI模型不可用，基于规则统计推断）
 
 """ + "\n".join(stages) + f"""
 

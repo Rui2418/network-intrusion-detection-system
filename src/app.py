@@ -21,7 +21,10 @@ from src.defense import (
     set_default_policy as defense_set_default,
     clear_stats as defense_clear_stats,
 )
-from src.llm import analyze_alert, suggest_defense, analyze_attack_chain, is_available as llm_available
+from src.llm import (
+    analyze_alert, suggest_defense, analyze_attack_chain,
+    is_available as llm_available, get_config, update_config, test_connection,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -320,6 +323,30 @@ def api_attack_chain():
         alerts = _last_analysis.get("alerts", [])
     result = analyze_attack_chain(alerts)
     return jsonify({"code": 0, "data": {"chain": result, "llm_used": llm_available()}})
+
+
+@app.get("/api/llm/config")
+def api_llm_config():
+    cfg = get_config()
+    cfg.pop("api_key", None)
+    return jsonify({"code": 0, "data": cfg})
+
+
+@app.put("/api/llm/config")
+def api_llm_update_config():
+    data = request.get_json(silent=True) or {}
+    update_config(data)
+    return jsonify({"code": 0, "data": get_config()})
+
+
+@app.post("/api/llm/test")
+def api_llm_test():
+    cfg = request.get_json(silent=True) or None
+    if cfg:
+        result = test_connection(cfg)
+    else:
+        result = test_connection()
+    return jsonify({"code": 0, "data": result})
 
 
 @socketio.on('connect')
