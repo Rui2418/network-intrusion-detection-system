@@ -7,6 +7,7 @@
       </div>
       <nav class="nav">
         <router-link to="/" class="nav-link">仪表盘</router-link>
+        <router-link to="/monitor" class="nav-link">实时监控</router-link>
         <router-link to="/detect" class="nav-link">入侵检测</router-link>
         <router-link to="/defense" class="nav-link">防御策略</router-link>
         <router-link to="/alerts" class="nav-link">告警列表</router-link>

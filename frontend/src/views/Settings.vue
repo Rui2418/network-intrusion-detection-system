@@ -24,6 +24,56 @@
     </div>
 
     <div class="section">
+      <h3>AI 智能分析配置</h3>
+      <div class="ai-form">
+        <div class="form-row">
+          <div class="fg">
+            <label>提供商</label>
+            <select v-model="llmConfig.provider">
+              <option value="ollama">Ollama (本地)</option>
+              <option value="openai">OpenAI 兼容</option>
+            </select>
+          </div>
+          <div class="fg flex-2">
+            <label>API 地址</label>
+            <input v-model="llmConfig.api_url" placeholder="http://localhost:11434" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="fg flex-2">
+            <label>API Key <small>(OpenAI 必填，Ollama 留空)</small></label>
+            <div class="key-row">
+              <input :type="showKey ? 'text' : 'password'" v-model="llmConfig.api_key" placeholder="sk-xxxxx" />
+              <button class="btn-eye" @click="showKey = !showKey">{{ showKey ? '👁' : '👁‍🗨' }}</button>
+            </div>
+          </div>
+          <div class="fg">
+            <label>模型名称</label>
+            <div class="model-row">
+              <select v-if="availableModels.length > 0" v-model="llmConfig.model" class="model-select">
+                <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <input v-model="llmConfig.model" :placeholder="llmConfig.provider==='ollama'?'qwen2.5:3b':'gpt-4o-mini'" />
+            </div>
+            <small v-if="availableModels.length > 0" class="model-hint">可用模型: {{ availableModels.join(', ') }}</small>
+          </div>
+        </div>
+        <div class="ai-actions">
+          <button class="btn-test" @click="testLLM" :disabled="testing">
+            {{ testing ? '测试中...' : '测试连接' }}
+          </button>
+          <span class="test-result" :class="{ ok: testOk, fail: !testOk && testDone }">
+            {{ testMsg }}
+          </span>
+          <button class="btn-save" @click="saveLLM" :disabled="saving">
+            {{ saving ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
+        <p class="hint">支持 Ollama 本地部署以及任何 OpenAI 兼容 API（如学校提供的 ChatGPT 代理地址）。API Key 仅保存在本地服务器上。</p>
+      </div>
+    </div>
+
+    <div class="section">
       <h3>系统信息</h3>
       <div class="grid-2">
         <div class="info"><label>后端框架</label><span>Flask 3.0</span></div>
@@ -54,6 +104,10 @@ export default {
         { name: 'high_freq', label: '高频访问', value: 20, window: 60 },
         { name: 'abnormal_status', label: '异常状态码', value: 8, window: '-' },
       ],
+      llmConfig: { provider: 'ollama', api_url: 'http://localhost:11434', api_key: '', model: 'qwen2.5:3b' },
+      showKey: false, testing: false, saving: false,
+      testOk: false, testDone: false, testMsg: '',
+      availableModels: [],
     }
   },
   methods: {
@@ -63,8 +117,55 @@ export default {
         this.interfaces = data.data || []
       } catch (e) {}
     },
+    async fetchLLMConfig() {
+      try {
+        const { data } = await axios.get('/api/llm/config')
+        if (data.code === 0) this.llmConfig = { ...this.llmConfig, ...data.data }
+      } catch (e) {}
+    },
+    async testLLM() {
+      this.testing = true; this.testDone = false; this.testMsg = ''
+      try {
+        const [testResp, modelsResp] = await Promise.all([
+          axios.post('/api/llm/test', {
+            provider: this.llmConfig.provider,
+            api_url: this.llmConfig.api_url,
+            api_key: this.llmConfig.api_key,
+            model: this.llmConfig.model,
+          }),
+          axios.get('/api/llm/models'),
+        ])
+        const r = testResp.data.data
+        this.testOk = r.ok
+        this.testDone = true
+        this.availableModels = modelsResp.data.data || r.available_models || []
+        if (r.ok) {
+          this.testMsg = `连接成功: ${r.provider} / ${r.model}${r.hint ? ' (' + r.hint + ')' : ''}`
+        } else {
+          this.testMsg = `连接失败: ${r.error}`
+        }
+      } catch (e) {
+        this.testOk = false; this.testDone = true; this.testMsg = '请求失败'
+      }
+      this.testing = false
+    },
+    async saveLLM() {
+      this.saving = true
+      try {
+        await axios.put('/api/llm/config', {
+          provider: this.llmConfig.provider,
+          api_url: this.llmConfig.api_url,
+          api_key: this.llmConfig.api_key,
+          model: this.llmConfig.model,
+        })
+        alert('AI 配置已保存')
+      } catch (e) {
+        alert('保存失败')
+      }
+      this.saving = false
+    },
   },
-  mounted() { this.refreshIfaces() },
+  mounted() { this.refreshIfaces(); this.fetchLLMConfig() },
 }
 </script>
 
@@ -90,4 +191,32 @@ export default {
 .info { display: flex; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border-radius: 4px; }
 .info label { font-size: 12px; color: #78909c; }
 .info span { font-size: 12px; color: #37474f; font-weight: 600; }
+.ai-form { display: flex; flex-direction: column; gap: 12px; }
+.form-row { display: flex; gap: 12px; }
+.form-row .fg { display: flex; flex-direction: column; gap: 3px; }
+.form-row .fg.flex-2 { flex: 2; }
+.form-row .fg.flex-2 { flex: 2; }
+.fg label { font-size: 11px; color: #78909c; }
+.fg label small { color: #90a4ae; font-weight: normal; }
+.fg input, .fg select {
+  padding: 6px 10px; border: 1px solid #d5dce6; border-radius: 4px;
+  font-size: 13px; background: #fff; color: #37474f;
+}
+.key-row { display: flex; gap: 4px; }
+.key-row input { flex: 1; }
+.btn-eye { padding: 6px 10px; border: 1px solid #d5dce6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
+.model-row { display: flex; gap: 6px; }
+.model-row select { width: 100%; padding: 6px 10px; border: 1px solid #d5dce6; border-radius: 4px; font-size: 13px; background: #fff; }
+.model-row input { flex: 1; }
+.model-hint { display: block; margin-top: 4px; color: #1565c0; font-size: 11px; }
+.ai-actions { display: flex; align-items: center; gap: 12px; }
+.btn-test, .btn-save {
+  padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; color: #fff;
+}
+.btn-test { background: #7c4dff; }
+.btn-save { background: #1e88e5; }
+.btn-test:disabled, .btn-save:disabled { opacity: 0.5; cursor: default; }
+.test-result { font-size: 12px; }
+.test-result.ok { color: #2e7d32; font-weight: 600; }
+.test-result.fail { color: #d32f2f; }
 </style>
