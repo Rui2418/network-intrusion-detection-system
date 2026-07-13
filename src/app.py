@@ -12,6 +12,21 @@ except ModuleNotFoundError:
     def CORS(_app):
         return _app
 
+try:
+    from flask_socketio import SocketIO
+except ModuleNotFoundError:
+    class SocketIO:
+        def __init__(self, app, **_kwargs):
+            self.app = app
+
+        def on(self, _event):
+            def decorator(func):
+                return func
+            return decorator
+
+        def run(self, app, **kwargs):
+            app.run(**kwargs)
+
 from src.detector.anomaly import detect_anomalies
 from src.detector.correlation import correlate_alerts
 from src.detector.models import AnalysisResult, Alert, Incident
@@ -69,7 +84,6 @@ _last_analysis = to_jsonable(AnalysisResult(
     recommendations=[],
 ))
 
-
 @app.get("/")
 def index():
     dist_index = FRONTEND_DIST / "index.html"
@@ -101,6 +115,7 @@ def analyze_upload():
 
     _last_analysis = analyze_events(events, source=uploaded.filename)
     return jsonify(_last_analysis)
+
 
 
 @app.get("/api/alerts")
