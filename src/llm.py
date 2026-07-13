@@ -41,6 +41,37 @@ def update_config(cfg: dict):
     current.update({k: v for k, v in cfg.items() if k in DEFAULT_CONFIG})
     _save_config(current)
 
+def _list_openai_models(api_url: str, api_key: str) -> list:
+    try:
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        resp = requests.get(f"{api_url}/models", headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            return [m.get("id", "") for m in data.get("data", data.get("models", []))]
+    except Exception:
+        pass
+    return []
+
+
+def list_models() -> list:
+    cfg = _load_config()
+    provider = cfg.get("provider", "ollama")
+    api_url = cfg.get("api_url", "").rstrip("/")
+    api_key = cfg.get("api_key", "")
+    if provider == "ollama" and _HTTP_OK:
+        try:
+            resp = requests.get(f"{api_url}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                return [m.get("name", "") for m in resp.json().get("models", [])]
+        except Exception:
+            pass
+    elif provider == "openai":
+        return _list_openai_models(api_url, api_key)
+    return []
+
+
 def test_connection(cfg: dict = None) -> dict:
     if cfg is None:
         cfg = _load_config()
@@ -82,7 +113,8 @@ def test_connection(cfg: dict = None) -> dict:
             if resp.status_code == 200:
                 return {"ok": True, "provider": "openai", "model": model}
             err = resp.json().get("error", {}).get("message", f"HTTP {resp.status_code}")
-            return {"ok": False, "error": err}
+            models = _list_openai_models(api_url, api_key)
+            return {"ok": False, "error": err, "available_models": models}
 
         else:
             return {"ok": False, "error": f"未知 provider: {provider}"}

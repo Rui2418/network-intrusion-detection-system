@@ -49,7 +49,13 @@
           </div>
           <div class="fg">
             <label>模型名称</label>
-            <input v-model="llmConfig.model" :placeholder="llmConfig.provider==='ollama'?'qwen2.5:3b':'gpt-4o-mini'" />
+            <div class="model-row">
+              <select v-if="availableModels.length > 0" v-model="llmConfig.model" class="model-select">
+                <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
+              </select>
+              <input v-model="llmConfig.model" :placeholder="llmConfig.provider==='ollama'?'qwen2.5:3b':'gpt-4o-mini'" />
+            </div>
+            <small v-if="availableModels.length > 0" class="model-hint">可用模型: {{ availableModels.join(', ') }}</small>
           </div>
         </div>
         <div class="ai-actions">
@@ -101,6 +107,7 @@ export default {
       llmConfig: { provider: 'ollama', api_url: 'http://localhost:11434', api_key: '', model: 'qwen2.5:3b' },
       showKey: false, testing: false, saving: false,
       testOk: false, testDone: false, testMsg: '',
+      availableModels: [],
     }
   },
   methods: {
@@ -119,18 +126,24 @@ export default {
     async testLLM() {
       this.testing = true; this.testDone = false; this.testMsg = ''
       try {
-        const { data } = await axios.post('/api/llm/test', {
-          provider: this.llmConfig.provider,
-          api_url: this.llmConfig.api_url,
-          api_key: this.llmConfig.api_key,
-          model: this.llmConfig.model,
-        })
-        const r = data.data
+        const [testResp, modelsResp] = await Promise.all([
+          axios.post('/api/llm/test', {
+            provider: this.llmConfig.provider,
+            api_url: this.llmConfig.api_url,
+            api_key: this.llmConfig.api_key,
+            model: this.llmConfig.model,
+          }),
+          axios.get('/api/llm/models'),
+        ])
+        const r = testResp.data.data
         this.testOk = r.ok
         this.testDone = true
-        this.testMsg = r.ok
-          ? `连接成功: ${r.provider} / ${r.model}${r.hint ? ' (' + r.hint + ')' : ''}`
-          : `连接失败: ${r.error}`
+        this.availableModels = modelsResp.data.data || r.available_models || []
+        if (r.ok) {
+          this.testMsg = `连接成功: ${r.provider} / ${r.model}${r.hint ? ' (' + r.hint + ')' : ''}`
+        } else {
+          this.testMsg = `连接失败: ${r.error}`
+        }
       } catch (e) {
         this.testOk = false; this.testDone = true; this.testMsg = '请求失败'
       }
@@ -192,6 +205,10 @@ export default {
 .key-row { display: flex; gap: 4px; }
 .key-row input { flex: 1; }
 .btn-eye { padding: 6px 10px; border: 1px solid #d5dce6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
+.model-row { display: flex; gap: 6px; }
+.model-row select { width: 100%; padding: 6px 10px; border: 1px solid #d5dce6; border-radius: 4px; font-size: 13px; background: #fff; }
+.model-row input { flex: 1; }
+.model-hint { display: block; margin-top: 4px; color: #1565c0; font-size: 11px; }
 .ai-actions { display: flex; align-items: center; gap: 12px; }
 .btn-test, .btn-save {
   padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; color: #fff;

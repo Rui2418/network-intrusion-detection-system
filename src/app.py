@@ -23,7 +23,7 @@ from src.defense import (
 )
 from src.llm import (
     analyze_alert, suggest_defense, analyze_attack_chain,
-    is_available as llm_available, get_config, update_config, test_connection,
+    is_available as llm_available, get_config, update_config, test_connection, list_models,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -347,6 +347,12 @@ def api_llm_test():
     else:
         result = test_connection()
     return jsonify({"code": 0, "data": result})
+
+
+@app.get("/api/llm/models")
+def api_llm_models():
+    models = list_models()
+    return jsonify({"code": 0, "data": models})
 
 
 @socketio.on('connect')
