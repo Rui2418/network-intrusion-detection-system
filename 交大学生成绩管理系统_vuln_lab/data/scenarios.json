@@ -1,0 +1,175 @@
+[
+  {
+    "id": "sqli_probe",
+    "name": "SQL 注入探测痕迹",
+    "description": "激活后启用受控的 SQL 注入形态成绩查询演示，学生账号携带特定 student_id 参数时可观察到越权返回。",
+    "expected_alerts": ["SQL注入尝试", "越权查询审计"],
+    "steps": ["激活场景", "登录学生 2024001 / 123456", "请求 /api/grades?student_id=2024001%27%20or%201=1--", "确认返回结果包含 2024002 或 2024003", "导出 IDS 日志并查看 SQL 注入特征告警"],
+    "grade_updates": [],
+    "log_events": [
+      {
+        "timestamp": "2026-07-15T09:00:00",
+        "source_ip": "198.51.100.88",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/api/grades?student_id=2024001%27%20or%201=1--",
+        "status_code": 200,
+        "username": "",
+        "login_success": "",
+        "method": "GET",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "sqlmap-demo",
+        "bytes_sent": 4500,
+        "duration_ms": 380,
+        "tls_fingerprint": "ja3-browser"
+      },
+      {
+        "timestamp": "2026-07-15T09:00:12",
+        "source_ip": "198.51.100.88",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/api/grades?course=1%20union%20select%20username,password%20from%20users",
+        "status_code": 200,
+        "username": "",
+        "login_success": "",
+        "method": "GET",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "sqlmap-demo",
+        "bytes_sent": 5200,
+        "duration_ms": 420,
+        "tls_fingerprint": "ja3-browser"
+      }
+    ]
+  },
+  {
+    "id": "xss_and_traversal",
+    "name": "XSS 与目录遍历探测",
+    "description": "模拟常见 Web 参数探测和敏感文件路径探测，用于触发特征匹配告警。",
+    "expected_alerts": ["XSS尝试", "目录遍历尝试", "敏感文件访问"],
+    "steps": ["激活场景", "查看审计记录", "导出日志并检查 Web 攻击类告警"],
+    "grade_updates": [],
+    "log_events": [
+      {
+        "timestamp": "2026-07-15T09:10:00",
+        "source_ip": "203.0.113.27",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/api/grades?student_id=%3Cscript%3Ealert(1)%3C/script%3E",
+        "status_code": 400,
+        "username": "",
+        "login_success": "",
+        "method": "GET",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "browser-demo",
+        "bytes_sent": 1800,
+        "duration_ms": 120,
+        "tls_fingerprint": "ja3-browser"
+      },
+      {
+        "timestamp": "2026-07-15T09:10:16",
+        "source_ip": "203.0.113.27",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/static/../../../../etc/passwd",
+        "status_code": 404,
+        "username": "",
+        "login_success": "",
+        "method": "GET",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "browser-demo",
+        "bytes_sent": 900,
+        "duration_ms": 85,
+        "tls_fingerprint": "ja3-browser"
+      }
+    ]
+  },
+  {
+    "id": "bruteforce_chain",
+    "name": "登录暴力尝试与攻击链",
+    "description": "模拟同一来源短时间内对多个账号进行失败登录，并继续访问命令路径，供 IDS 做异常和关联分析。",
+    "expected_alerts": ["暴力登录", "密码喷洒", "恶意命令访问", "攻击链关联"],
+    "steps": ["激活场景", "导出日志", "在 IDS 仪表盘查看异常检测与攻击链"],
+    "grade_updates": [
+      {
+        "student_id": "2024002",
+        "course": "网络攻防实验",
+        "score": 70,
+        "note": "场景中模拟一次需要课后核查的成绩变更记录"
+      }
+    ],
+    "log_events": [
+      {
+        "timestamp": "2026-07-15T09:20:00",
+        "source_ip": "198.51.100.35",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/api/login",
+        "status_code": 401,
+        "username": "2024001",
+        "login_success": "false",
+        "method": "POST",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "python-requests-demo",
+        "bytes_sent": 760,
+        "duration_ms": 45,
+        "tls_fingerprint": "ja3-automation"
+      },
+      {
+        "timestamp": "2026-07-15T09:20:03",
+        "source_ip": "198.51.100.35",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/api/login",
+        "status_code": 401,
+        "username": "2024002",
+        "login_success": "false",
+        "method": "POST",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "python-requests-demo",
+        "bytes_sent": 760,
+        "duration_ms": 48,
+        "tls_fingerprint": "ja3-automation"
+      },
+      {
+        "timestamp": "2026-07-15T09:20:06",
+        "source_ip": "198.51.100.35",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/api/login",
+        "status_code": 401,
+        "username": "2024003",
+        "login_success": "false",
+        "method": "POST",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "python-requests-demo",
+        "bytes_sent": 760,
+        "duration_ms": 46,
+        "tls_fingerprint": "ja3-automation"
+      },
+      {
+        "timestamp": "2026-07-15T09:20:30",
+        "source_ip": "198.51.100.35",
+        "target_ip": "10.0.0.42",
+        "port": 8001,
+        "path": "/shell?cmd=whoami",
+        "status_code": 404,
+        "username": "",
+        "login_success": "",
+        "method": "GET",
+        "protocol": "tcp",
+        "host": "grade-lab.local",
+        "user_agent": "python-requests-demo",
+        "bytes_sent": 1200,
+        "duration_ms": 90,
+        "tls_fingerprint": "ja3-automation"
+      }
+    ]
+  }
+]

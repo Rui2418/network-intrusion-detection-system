@@ -1,0 +1,44 @@
+[
+  {
+    "student_id": "2024001",
+    "student_name": "张明",
+    "class_name": "网络安全 2401",
+    "course": "信息安全导论",
+    "score": 88
+  },
+  {
+    "student_id": "2024001",
+    "student_name": "张明",
+    "class_name": "网络安全 2401",
+    "course": "网络攻防实验",
+    "score": 92
+  },
+  {
+    "student_id": "2024002",
+    "student_name": "李娜",
+    "class_name": "网络安全 2401",
+    "course": "信息安全导论",
+    "score": 91
+  },
+  {
+    "student_id": "2024002",
+    "student_name": "李娜",
+    "class_name": "网络安全 2401",
+    "course": "网络攻防实验",
+    "score": 86
+  },
+  {
+    "student_id": "2024003",
+    "student_name": "王强",
+    "class_name": "网络安全 2402",
+    "course": "信息安全导论",
+    "score": 79
+  },
+  {
+    "student_id": "2024003",
+    "student_name": "王强",
+    "class_name": "网络安全 2402",
+    "course": "网络攻防实验",
+    "score": 83
+  }
+]

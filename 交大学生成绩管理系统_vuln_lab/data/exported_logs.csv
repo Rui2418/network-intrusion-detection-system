@@ -1,0 +1,6 @@
+timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint
+2026-07-15T10:16:34,10.0.0.20,10.0.0.42,8001,/lab/login,200,2024001,true,POST,tcp,grade-lab.local,lab-ui,600,35,ja3-browser
+2026-07-15T10:16:34,10.0.0.20,10.0.0.42,8001,/lab/list_grades,200,2024001,,GET,tcp,grade-lab.local,lab-ui,600,35,ja3-browser
+2026-07-15T10:16:34,10.0.0.20,10.0.0.42,8001,/lab/vulnerable_grade_query,200,2024001,,GET,tcp,grade-lab.local,lab-ui,600,35,ja3-browser
+2026-07-15T09:00:00,198.51.100.88,10.0.0.42,8001,/api/grades?student_id=2024001%27%20or%201=1--,200,,,GET,tcp,grade-lab.local,sqlmap-demo,4500,380,ja3-browser
+2026-07-15T09:00:12,198.51.100.88,10.0.0.42,8001,"/api/grades?course=1%20union%20select%20username,password%20from%20users",200,,,GET,tcp,grade-lab.local,sqlmap-demo,5200,420,ja3-browser

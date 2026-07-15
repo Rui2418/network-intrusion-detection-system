@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>交大学生成绩管理系统</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div>
+        <h1>交大学生成绩管理系统</h1>
+        <p>学生成绩查询与教师成绩登记平台</p>
+      </div>
+      <button id="logoutBtn" class="ghost hidden" type="button">退出登录</button>
+    </header>
+
+    <main>
+      <section id="loginPanel" class="login-shell">
+        <form id="loginForm" class="panel login-card">
+          <h2>用户登录</h2>
+          <label>
+            <span>账号</span>
+            <input id="username" name="username" autocomplete="username" placeholder="学号或教师账号" required>
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+          </label>
+          <button class="primary" type="submit">登录</button>
+          <p id="loginMessage" class="message"></p>
+          <div class="demo-users">
+            <span>学生：2024001 / 123456</span>
+            <span>教师：teacher / teacher123</span>
+          </div>
+        </form>
+      </section>
+
+      <section id="workspace" class="workspace hidden">
+        <div class="summary-row">
+          <div class="panel identity-card">
+            <span class="label">当前用户</span>
+            <strong id="currentName">-</strong>
+            <small id="currentMeta">-</small>
+          </div>
+          <div class="panel stat-card">
+            <span class="label">可见成绩</span>
+            <strong id="gradeTotal">0</strong>
+            <small>条记录</small>
+          </div>
+          <div class="panel stat-card">
+            <span class="label">平均分</span>
+            <strong id="avgScore">0</strong>
+            <small>当前列表</small>
+          </div>
+        </div>
+
+        <section id="teacherPanel" class="panel teacher-panel hidden">
+          <h2>登记或修改成绩</h2>
+          <form id="gradeForm" class="grade-form">
+            <label>
+              <span>学生学号</span>
+              <input id="studentId" name="student_id" placeholder="例如 2024001" required>
+            </label>
+            <label>
+              <span>课程名称</span>
+              <input id="course" name="course" placeholder="例如 信息安全导论" required>
+            </label>
+            <label>
+              <span>成绩</span>
+              <input id="score" name="score" type="number" min="0" max="100" step="1" placeholder="0-100" required>
+            </label>
+            <button class="primary" type="submit">保存成绩</button>
+          </form>
+          <p id="gradeMessage" class="message"></p>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="table-head">
+            <div>
+              <h2>成绩列表</h2>
+              <p id="tableHint">学生只能查看自己的成绩，教师可以查看全部学生成绩。</p>
+            </div>
+            <div id="filterBox" class="filter-box hidden">
+              <input id="filterStudentId" placeholder="按学号筛选">
+              <button id="filterBtn" class="secondary" type="button">筛选</button>
+              <button id="resetFilterBtn" class="ghost" type="button">重置</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>学号</th>
+                  <th>姓名</th>
+                  <th>班级</th>
+                  <th>课程</th>
+                  <th>成绩</th>
+                </tr>
+              </thead>
+              <tbody id="gradesBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

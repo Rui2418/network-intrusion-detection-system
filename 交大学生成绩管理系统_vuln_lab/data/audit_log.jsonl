@@ -1,0 +1,8 @@
+{"timestamp": "2026-07-15T10:16:34", "username": "2024001", "action": "login", "target": "student", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
+{"timestamp": "2026-07-15T10:16:34", "username": "2024001", "action": "list_grades", "target": "2024002", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
+{"timestamp": "2026-07-15T10:16:34", "username": "2024001", "action": "vulnerable_grade_query", "target": "2024001' or 1=1--", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": "lab_sqli_bypass_returned_all_grades"}
+{"timestamp": "2026-07-15T10:17:48", "username": "2024001", "action": "login", "target": "student", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
+{"timestamp": "2026-07-15T10:17:48", "username": "2024001", "action": "list_grades", "target": "2024001", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
+{"timestamp": "2026-07-15T10:18:00", "username": "2024001", "action": "logout", "target": "", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
+{"timestamp": "2026-07-15T10:18:12", "username": "teacher", "action": "login", "target": "teacher", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
+{"timestamp": "2026-07-15T10:18:12", "username": "teacher", "action": "list_grades", "target": "all", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": ""}
