@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.detector.signatures import detect_signature_attacks
+from src.detector.signatures import detect_signature_attacks, load_signatures
 from src.parser.log_parser import parse_csv_log, parse_csv_rows
 
 

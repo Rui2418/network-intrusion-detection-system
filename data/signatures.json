@@ -40,6 +40,36 @@
     "target_field": "path"
   },
   {
+    "id": "command_injection",
+    "alert_type": "命令注入尝试",
+    "category": "特征匹配",
+    "fields": ["path"],
+    "patterns": ["|ls", "|cat", "|id", "|whoami", "|pwd", "|wget", "|curl", "|nc", "|ping", ";ls", ";cat", ";id", ";whoami", ";pwd", ";wget", ";curl", "`id`", "`whoami`", "$(whoami)", "$(id)", "$(cat"],
+    "base_score": 65,
+    "confidence": 0.91,
+    "target_field": "path"
+  },
+  {
+    "id": "file_inclusion",
+    "alert_type": "文件包含尝试",
+    "category": "特征匹配",
+    "fields": ["path"],
+    "patterns": ["include=http", "include=ftp", "include=php", "require=http", "require=ftp", "require=php", "php://input", "php://filter", "expect://", "data://text", "file_get_contents", "RFI"],
+    "base_score": 68,
+    "confidence": 0.92,
+    "target_field": "path"
+  },
+  {
+    "id": "webshell_exec",
+    "alert_type": "Webshell执行",
+    "category": "特征匹配",
+    "fields": ["path"],
+    "patterns": ["eval(", "assert(", "exec(", "system(", "shell_exec(", "passthru(", "base64_decode(", "gzinflate(", "str_rot13(", "preg_replace", "create_function", "call_user_func"],
+    "base_score": 72,
+    "confidence": 0.94,
+    "target_field": "path"
+  },
+  {
     "id": "c2_simulation",
     "alert_type": "疑似控制信道",
     "category": "特征匹配",
