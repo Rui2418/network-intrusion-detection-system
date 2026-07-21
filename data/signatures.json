@@ -4,7 +4,7 @@
     "alert_type": "SQL注入尝试",
     "category": "特征匹配",
     "fields": ["path"],
-    "patterns": ["union select", "or 1=1", " or ", " 1=1", "'", "--", "information_schema", "sleep(", "select%20", "union%20select"],
+    "patterns": ["union select", "or 1=1", " 1=1", "information_schema", "sleep(", "select%20", "union%20select"],
     "base_score": 60,
     "confidence": 0.9,
     "target_field": "path"
