@@ -121,7 +121,15 @@ export default {
         r.enabled = !r.enabled
       } catch (e) {}
     },
-    async delRule(id) { if (!confirm('确认删除？')) return; await axios.delete(`/api/defense/rules/${id}`); this.fetchRules() },
+    async delRule(id) {
+      if (!confirm('确认删除？')) return
+      try {
+        await axios.delete(`/api/defense/rules/${id}`)
+        await this.fetchRules()
+      } catch (e) {
+        alert('删除失败: ' + (e.response?.data?.message || e.message))
+      }
+    },
     openAdd() {
       this.editing = null; this.form = { priority: 100, protocol: 'any', saddr: '', daddr: '', sport: 0, dport: 0, action: 'drop', enabled: true }; this.showModal = true
     },
@@ -136,7 +144,11 @@ export default {
     },
     closeModal() { this.showModal = false },
   },
-  mounted() { this.fetchStatus(); this.fetchStats(); this.fetchRules() },
+  mounted() {
+    this.fetchStatus(); this.fetchStats(); this.fetchRules()
+    this._timer = setInterval(() => { this.fetchStats(); this.fetchRules() }, 2000)
+  },
+  beforeUnmount() { clearInterval(this._timer) },
 }
 </script>
 

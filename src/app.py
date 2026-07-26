@@ -221,6 +221,29 @@ def export_alerts():
     )
 
 
+@app.post("/api/alerts/clear")
+def api_clear_alerts():
+    global _last_analysis
+    _last_analysis = AnalysisResult(
+        events=0, alerts=[], incidents=[],
+        summary={
+            "高危": 0, "中危": 0, "低危": 0,
+            "by_level": {"高危": 0, "中危": 0, "低危": 0},
+            "by_type": {}, "by_category": {},
+            "top_sources": [], "top_targets": [], "timeline": [],
+        },
+        baseline={
+            "request_rate_per_ip": [],
+            "unique_ports_per_ip": [],
+            "login_failures_per_ip": [],
+            "data_coverage": {"bytes_sent": False, "duration_ms": False, "tls_fingerprint": False},
+        },
+        metadata={"detectors": ["rule", "signature", "anomaly", "correlation"], "generated_at": ""},
+        source="", recommendations=[],
+    )
+    return jsonify({"code": 0, "message": "cleared"})
+
+
 @app.get("/api/alerts/stats")
 def get_alert_stats():
     alerts = _last_analysis.get("alerts", [])
@@ -474,9 +497,12 @@ def api_defense_status():
 @app.post("/api/defense/enable")
 def api_defense_enable():
     data = request.get_json(silent=True) or {}
-    try: defense_set_enable(data.get("enabled", False))
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_set_enable(data.get("enabled", False))
+        status = defense_status()
+        return jsonify({"code": 0, "data": status})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"设置失败: {e}"}), 500
 
 @app.get("/api/defense/rules")
 def api_defense_rules():
@@ -490,9 +516,11 @@ def api_defense_add_rule():
     proc = {"any": 0, "icmp": 1, "tcp": 6, "udp": 17}
     if isinstance(data.get("protocol"), str):
         data["protocol"] = proc.get(data["protocol"], 0)
-    try: defense_add_rule(data)
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_add_rule(data)
+        return jsonify({"code": 0, "message": "OK"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"添加规则失败: {e}"}), 500
 
 @app.put("/api/defense/rules/<int:rule_id>")
 def api_defense_update_rule(rule_id):
@@ -501,15 +529,19 @@ def api_defense_update_rule(rule_id):
     proc = {"any": 0, "icmp": 1, "tcp": 6, "udp": 17}
     if isinstance(data.get("protocol"), str):
         data["protocol"] = proc.get(data["protocol"], 0)
-    try: defense_update_rule(data)
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_update_rule(data)
+        return jsonify({"code": 0, "message": "OK"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"修改规则失败: {e}"}), 500
 
 @app.delete("/api/defense/rules/<int:rule_id>")
 def api_defense_delete_rule(rule_id):
-    try: defense_del_rule(rule_id)
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_del_rule(rule_id)
+        return jsonify({"code": 0, "message": "OK"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"删除规则失败: {e}"}), 500
 
 @app.get("/api/defense/stats")
 def api_defense_stats():

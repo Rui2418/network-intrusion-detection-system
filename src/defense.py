@@ -1,14 +1,20 @@
 import struct
 import os
 import sys
+import ctypes
+import ctypes.util
 
 DEVICE_PATH = "/dev/firewall"
 IS_LINUX = sys.platform.startswith('linux')
 
+_libc = None
 if IS_LINUX:
     try:
         import fcntl
         _fcntl_ok = True
+        libc_name = ctypes.util.find_library("c")
+        if libc_name:
+            _libc = ctypes.CDLL(libc_name, use_errno=True)
     except ImportError:
         _fcntl_ok = False
         IS_LINUX = False
@@ -16,13 +22,24 @@ else:
     _fcntl_ok = False
     IS_LINUX = False
 
+FWRULE_FMT = 'IIIIIHHIIIIIII'
+
 def _mock_data():
     return {"enabled": False, "default_policy": "accept", "rule_count": 0, "uptime_seconds": 0}
 
 
 def set_enable(enabled):
-    if not IS_LINUX:
+    if not IS_LINUX or not os.path.exists(DEVICE_PATH):
         return
+    fd = None
+    try:
+        fd = os.open(DEVICE_PATH, os.O_RDWR)
+        _ioctl_SET_ENABLE(fd, 1 if enabled else 0)
+    except OSError as e:
+        raise RuntimeError(f"ioctl SET_ENABLE failed: {e}")
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def get_status():
@@ -56,7 +73,7 @@ def add_rule(data):
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
-        buf = struct.pack('IIIIHHIIIIIII',
+        buf = struct.pack('IIIIIHHIIIIIII',
             0, data.get('priority', 100),
             data.get('protocol', 0),
             _ip_to_int(data.get('saddr', '')),
@@ -67,8 +84,8 @@ def add_rule(data):
             1 if data.get('enabled', True) else 0,
             0, 0, 0, 0, 0)
         _ioctl_ADD_RULE(fd, buf)
-    except OSError:
-        pass
+    except OSError as e:
+        raise RuntimeError(f"ioctl ADD_RULE failed: {e}")
     finally:
         if fd is not None:
             os.close(fd)
@@ -81,8 +98,8 @@ def del_rule(rule_id):
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
         _ioctl_DEL_RULE(fd, rule_id)
-    except OSError:
-        pass
+    except OSError as e:
+        raise RuntimeError(f"ioctl DEL_RULE failed: {e}")
     finally:
         if fd is not None:
             os.close(fd)
@@ -94,18 +111,19 @@ def update_rule(data):
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
-        buf = struct.pack('IIIIHHIIIIIII',
+        buf = struct.pack('IIIIIHHIIIIIII',
             data.get('id', 0), data.get('priority', 100),
             data.get('protocol', 0),
             _ip_to_int(data.get('saddr', '')),
             _ip_to_int(data.get('daddr', '')),
-            data.get('sport', 0), data.get('dport', 0),
+            data.get('sport', 0),
+            data.get('dport', 0),
             0 if data.get('action', 'drop') == 'accept' else 1,
             1 if data.get('enabled', True) else 0,
             0, 0, 0, 0, 0)
         _ioctl_UPDATE_RULE(fd, buf)
-    except OSError:
-        pass
+    except OSError as e:
+        raise RuntimeError(f"ioctl UPDATE_RULE failed: {e}")
     finally:
         if fd is not None:
             os.close(fd)
@@ -120,10 +138,9 @@ def list_rules():
         buf = _ioctl_LIST_RULES(fd)
         count = struct.unpack_from('I', buf, 0)[0]
         rules = []
-        fmt = 'IIIIHHIIIIIII'
-        sz = struct.calcsize(fmt)
+        sz = struct.calcsize(FWRULE_FMT)
         for i in range(count):
-            f = struct.unpack_from(fmt, buf, 4 + i * sz)
+            f = struct.unpack_from(FWRULE_FMT, buf, 4 + i * sz)
             rules.append({
                 'id': f[0], 'priority': f[1],
                 'protocol_num': f[2],
@@ -175,8 +192,8 @@ def set_default_policy(policy):
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
         _ioctl_SET_DEFAULT(fd, policy)
-    except OSError:
-        pass
+    except OSError as e:
+        raise RuntimeError(f"ioctl SET_DEFAULT failed: {e}")
     finally:
         if fd is not None:
             os.close(fd)
@@ -189,8 +206,8 @@ def clear_stats():
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
         _ioctl_CLEAR_STATS(fd)
-    except OSError:
-        pass
+    except OSError as e:
+        raise RuntimeError(f"ioctl CLEAR_STATS failed: {e}")
     finally:
         if fd is not None:
             os.close(fd)
@@ -208,19 +225,34 @@ def _ioctl_GET_STATUS(fd):
     return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 2, 16), b'\x00' * 16)
 
 def _ioctl_ADD_RULE(fd, buf):
-    fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 3, 64), buf)
+    fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 3, 52), buf)
 
 def _ioctl_DEL_RULE(fd, rule_id):
     fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 4, 4), struct.pack('i', rule_id))
 
 def _ioctl_UPDATE_RULE(fd, buf):
-    fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 5, 64), buf)
+    fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 5, 52), buf)
 
 def _ioctl_LIST_RULES(fd):
-    return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 6, 16388), b'\x00' * 16388)
+    if _libc:
+        buf = ctypes.create_string_buffer(13316)
+        ret = _libc.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 6, 13316), buf)
+        if ret < 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+        return buf.raw
+    return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 6, 13316), b'\x00' * 13316)
+
 
 def _ioctl_GET_STATS(fd):
-    return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 7, 1040), b'\x00' * 1040)
+    if _libc:
+        buf = ctypes.create_string_buffer(1048)
+        ret = _libc.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 7, 1048), buf)
+        if ret < 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+        return buf.raw
+    return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 7, 1048), b'\x00' * 1048)
 
 def _ioctl_SET_DEFAULT(fd, policy):
     fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 8, 4), struct.pack('i', 1 if policy == 'deny' else 0))

@@ -14,6 +14,7 @@
           <option value="低危">低危</option>
         </select>
         <button class="btn-export" @click="exportCSV">导出 CSV</button>
+        <button class="btn-clear" @click="clearAlerts" v-if="alerts.length">清空告警</button>
       </div>
     </div>
 
@@ -80,7 +81,13 @@ const TYPE_COLORS = {
 
 export default {
   name: 'AlertsPage',
-  data() { return { alerts: [], total: 0, filterType: '', filterSev: '', availableTypes: [] } },
+  data() {
+    return {
+      alerts: [], total: 0, filterType: '', filterSev: '', availableTypes: [],
+      showModal: false, analyzing: null, blocking: null,
+      aiResult: '', analyzeTarget: null,
+    }
+  },
   methods: {
     typeColor(t) { return TYPE_COLORS[t] || '#607d8b' },
     alertTime(alert) { return alert.timestamp || alert.first_seen || alert.last_seen || '--' },
@@ -142,6 +149,16 @@ export default {
       const query = params.toString()
       window.open(`/api/alerts/export${query ? '?' + query : ''}`, '_blank')
     },
+    async clearAlerts() {
+      if (!confirm('确认清空全部告警数据？')) return
+      try {
+        await axios.post('/api/alerts/clear', {})
+        this.alerts = []
+        this.total = 0
+      } catch (e) {
+        alert('清空失败: ' + (e.response?.data?.message || e.message))
+      }
+    },
   },
   mounted() { this.fetchAlerts() },
 }
@@ -157,6 +174,7 @@ export default {
   background: #fff; font-size: 13px; color: #455a64;
 }
 .btn-export { padding: 6px 14px; background: #2e7d32; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.btn-clear { padding: 6px 14px; background: #e53935; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; margin-left: 6px; }
 .table-wrap { overflow-x: auto; background: #fff; border-radius: 8px; border: 1px solid #e8ecf1; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf1f6; }
