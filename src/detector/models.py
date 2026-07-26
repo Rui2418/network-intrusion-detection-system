@@ -19,6 +19,7 @@ class Alert:
     first_seen: datetime | None = None
     last_seen: datetime | None = None
     matched_fields: tuple[str, ...] = ()
+    timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 @dataclass(frozen=True)
