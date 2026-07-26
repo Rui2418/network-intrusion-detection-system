@@ -65,7 +65,7 @@ def add_rule(data):
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
-        buf = struct.pack('IIIIIHHIIIIIIII',
+        buf = struct.pack('IIIIIHHIIIIIII',
             0, data.get('priority', 100),
             data.get('protocol', 0),
             _ip_to_int(data.get('saddr', '')),
@@ -103,7 +103,7 @@ def update_rule(data):
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
-        buf = struct.pack('IIIIIHHIIIIIIII',
+        buf = struct.pack('IIIIIHHIIIIIII',
             data.get('id', 0), data.get('priority', 100),
             data.get('protocol', 0),
             _ip_to_int(data.get('saddr', '')),

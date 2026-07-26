@@ -516,9 +516,11 @@ def api_defense_add_rule():
     proc = {"any": 0, "icmp": 1, "tcp": 6, "udp": 17}
     if isinstance(data.get("protocol"), str):
         data["protocol"] = proc.get(data["protocol"], 0)
-    try: defense_add_rule(data)
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_add_rule(data)
+        return jsonify({"code": 0, "message": "OK"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"添加规则失败: {e}"}), 500
 
 @app.put("/api/defense/rules/<int:rule_id>")
 def api_defense_update_rule(rule_id):
@@ -527,15 +529,19 @@ def api_defense_update_rule(rule_id):
     proc = {"any": 0, "icmp": 1, "tcp": 6, "udp": 17}
     if isinstance(data.get("protocol"), str):
         data["protocol"] = proc.get(data["protocol"], 0)
-    try: defense_update_rule(data)
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_update_rule(data)
+        return jsonify({"code": 0, "message": "OK"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"修改规则失败: {e}"}), 500
 
 @app.delete("/api/defense/rules/<int:rule_id>")
 def api_defense_delete_rule(rule_id):
-    try: defense_del_rule(rule_id)
-    except: pass
-    return jsonify({"code": 0, "message": "OK"})
+    try:
+        defense_del_rule(rule_id)
+        return jsonify({"code": 0, "message": "OK"})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"删除规则失败: {e}"}), 500
 
 @app.get("/api/defense/stats")
 def api_defense_stats():
