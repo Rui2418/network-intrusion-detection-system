@@ -1,14 +1,20 @@
 import struct
 import os
 import sys
+import ctypes
+import ctypes.util
 
 DEVICE_PATH = "/dev/firewall"
 IS_LINUX = sys.platform.startswith('linux')
 
+_libc = None
 if IS_LINUX:
     try:
         import fcntl
         _fcntl_ok = True
+        libc_name = ctypes.util.find_library("c")
+        if libc_name:
+            _libc = ctypes.CDLL(libc_name, use_errno=True)
     except ImportError:
         _fcntl_ok = False
         IS_LINUX = False
@@ -227,9 +233,24 @@ def _ioctl_UPDATE_RULE(fd, buf):
     fcntl.ioctl(fd, _ioc(1, FIREWALL_MAGIC, 5, 52), buf)
 
 def _ioctl_LIST_RULES(fd):
+    if _libc:
+        buf = ctypes.create_string_buffer(13316)
+        ret = _libc.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 6, 13316), buf)
+        if ret < 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+        return buf.raw
     return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 6, 13316), b'\x00' * 13316)
 
+
 def _ioctl_GET_STATS(fd):
+    if _libc:
+        buf = ctypes.create_string_buffer(1048)
+        ret = _libc.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 7, 1048), buf)
+        if ret < 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+        return buf.raw
     return fcntl.ioctl(fd, _ioc(2, FIREWALL_MAGIC, 7, 1048), b'\x00' * 1048)
 
 def _ioctl_SET_DEFAULT(fd, policy):
