@@ -136,7 +136,11 @@ export default {
     },
     closeModal() { this.showModal = false },
   },
-  mounted() { this.fetchStatus(); this.fetchStats(); this.fetchRules() },
+  mounted() {
+    this.fetchStatus(); this.fetchStats(); this.fetchRules()
+    this._timer = setInterval(() => { this.fetchStats(); this.fetchRules() }, 2000)
+  },
+  beforeUnmount() { clearInterval(this._timer) },
 }
 </script>
 
