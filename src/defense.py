@@ -22,6 +22,8 @@ else:
     _fcntl_ok = False
     IS_LINUX = False
 
+FWRULE_FMT = 'IIIIIHHIIIIIII'
+
 def _mock_data():
     return {"enabled": False, "default_policy": "accept", "rule_count": 0, "uptime_seconds": 0}
 
@@ -136,10 +138,9 @@ def list_rules():
         buf = _ioctl_LIST_RULES(fd)
         count = struct.unpack_from('I', buf, 0)[0]
         rules = []
-        fmt = 'IIIIHHIIIIIII'
-        sz = struct.calcsize(fmt)
+        sz = struct.calcsize(FWRULE_FMT)
         for i in range(count):
-            f = struct.unpack_from(fmt, buf, 4 + i * sz)
+            f = struct.unpack_from(FWRULE_FMT, buf, 4 + i * sz)
             rules.append({
                 'id': f[0], 'priority': f[1],
                 'protocol_num': f[2],
