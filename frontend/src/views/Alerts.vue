@@ -81,7 +81,13 @@ const TYPE_COLORS = {
 
 export default {
   name: 'AlertsPage',
-  data() { return { alerts: [], total: 0, filterType: '', filterSev: '', availableTypes: [] } },
+  data() {
+    return {
+      alerts: [], total: 0, filterType: '', filterSev: '', availableTypes: [],
+      showModal: false, analyzing: null, blocking: null,
+      aiResult: '', analyzeTarget: null,
+    }
+  },
   methods: {
     typeColor(t) { return TYPE_COLORS[t] || '#607d8b' },
     alertTime(alert) { return alert.timestamp || alert.first_seen || alert.last_seen || '--' },
