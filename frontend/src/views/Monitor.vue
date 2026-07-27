@@ -83,7 +83,7 @@ export default {
 
     this.socket = io()
     this.socket.on('connect', () => { this.connected = true })
-    this.socket.on('ids_update', () => { this.fetchAlerts() })
+    this.socket.on('analysis_result', () => { this.fetchAlerts() })
     this.socket.on('disconnect', () => { this.connected = false })
   },
   beforeUnmount() {

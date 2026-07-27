@@ -160,7 +160,7 @@ export default {
     this.socket.on('connect', () => {
       this.wsConnected = true
     })
-    this.socket.on('ids_update', (data) => {
+    this.socket.on('analysis_result', (data) => {
       this.ids = data || this.ids
       this.lastWsUpdate = Date.now()
       this.$nextTick(() => this.updateCharts())
