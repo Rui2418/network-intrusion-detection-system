@@ -44,6 +44,27 @@
       </div>
     </div>
 
+    <hr class="divider" />
+
+    <div class="section-title">&#x1F4E1; Zeek 实时数据采集</div>
+    <div class="stat-row">
+      <div class="card" :class="{ active: zeek.running, stopped: !zeek.running }">
+        <div class="card-label">Zeek 抓包</div>
+        <div class="card-value">{{ zeek.running ? '运行中' : '已停止' }}</div>
+      </div>
+      <div class="card"><div class="card-label">Zeek 安装</div>
+        <div class="card-value" :style="{ color: zeek.installed ? '#2e7d32' : '#c62828' }">
+          {{ zeek.installed ? '已安装' : '未安装' }}
+        </div>
+      </div>
+      <div class="card"><div class="card-label">监控接口</div>
+        <div class="card-value" style="font-size:13px;">{{ zeek.interface || '--' }}</div>
+      </div>
+      <div class="card"><div class="card-label">数据来源</div>
+        <div class="card-value" style="font-size:12px;">{{ ids.source || '--' }}</div>
+      </div>
+    </div>
+
     <div class="chart-panel full-width" v-if="attackChain">
       <div class="panel-title">攻击链推演</div>
       <div class="chain-content">{{ attackChain }}</div>
@@ -79,6 +100,7 @@ export default {
       socket: null,
       attackChain: '',
       chaining: false,
+      zeek: { installed: false, running: false, interface: '', version: '' },
     }
   },
   computed: {
@@ -136,9 +158,13 @@ export default {
     async refreshAll() {
       this.loading = true
       try {
-        const { data } = await axios.get('/api/dashboard')
-        this.ids = data.ids || this.ids
-        this.ips = data.ips || this.ips
+        const [dashResp, zeekResp] = await Promise.all([
+          axios.get('/api/dashboard'),
+          axios.get('/api/collector/status').catch(() => ({ data: { code: 1, data: {} } })),
+        ])
+        this.ids = dashResp.data.ids || this.ids
+        this.ips = dashResp.data.ips || this.ips
+        if (zeekResp.data.code === 0) this.zeek = zeekResp.data.data
         this.$nextTick(() => this.updateCharts())
       } catch (e) {}
       this.loading = false

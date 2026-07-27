@@ -1,3 +1,5 @@
 timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint
-2026-07-20T16:02:17,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0",1407,3,ja3-browser
-2026-07-20T16:02:18,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0",1407,1,ja3-browser
+2026-07-20T10:00:00,127.0.0.1,10.0.0.42,8001,/api/login,200,2024001,true,POST,tcp,127.0.0.1,grade-lab-demo/1.0,680,30,ja3-browser
+2026-07-20T10:00:02,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,grade-lab-demo/1.0,4500,40,ja3-browser
+2026-07-20T10:00:04,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,grade-lab-demo/1.0,4500,38,ja3-browser
+2026-07-20T10:00:06,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,grade-lab-demo/1.0,4500,36,ja3-browser

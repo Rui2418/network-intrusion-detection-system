@@ -48,6 +48,12 @@ from src.detector.rules import detect_attacks
 from src.detector.signatures import detect_signature_attacks
 from src.parser.log_parser import parse_csv_log, parse_csv_rows
 from src.utils.serialization import to_jsonable
+from src.collector.zeek_collector import (
+    get_zeek_info, get_capture_status, get_log_files,
+    start_capture, stop_capture, load_zeek_logs, set_event_callback,
+    find_zeek, find_zeek_log_dir,
+)
+from src.collector.zeek_parser import convert_to_csv
 from src.defense import (
     get_status as defense_status,
     set_enable as defense_set_enable,
@@ -589,6 +595,116 @@ def api_interfaces():
     except:
         ifaces = ["eth0", "wlan0", "lo"]
     return jsonify({"code": 0, "data": ifaces[:20]})
+
+
+# ── Zeek 数据采集 API ─────────────────────────────────────────
+
+
+@app.get("/api/collector/status")
+def api_collector_status():
+    """Zeek 安装状态与抓包运行状态"""
+    info = get_zeek_info()
+    return jsonify({"code": 0, "data": info})
+
+
+@app.get("/api/collector/logs")
+def api_collector_logs():
+    """列出 Zeek 日志目录下可用的日志文件"""
+    files = get_log_files()
+    info = get_zeek_info()
+    return jsonify({
+        "code": 0,
+        "data": {
+            "files": files,
+            "log_dir": info.get("log_dir", ""),
+        },
+    })
+
+
+@app.post("/api/collector/start")
+def api_collector_start():
+    """启动 Zeek 抓包"""
+    data = request.get_json(silent=True) or {}
+    interface = data.get("interface", "")
+    result = start_capture(
+        interface=interface,
+        zeek_script=str(Path(__file__).resolve().parent.parent / "zeek" / "ids.zeek"),
+    )
+    return jsonify({"code": 0 if result.get("success") else 1, "data": result})
+
+
+@app.post("/api/collector/stop")
+def api_collector_stop():
+    """停止 Zeek 抓包"""
+    result = stop_capture()
+    return jsonify({"code": 0 if result.get("success") else 1, "data": result})
+
+
+@app.post("/api/collector/analyze")
+def api_collector_analyze():
+    """解析 Zeek 日志目录中的所有日志并执行分析"""
+    global _last_analysis
+
+    # 加载 Zeek 日志
+    events_raw = load_zeek_logs()
+    if not events_raw:
+        return jsonify({
+            "code": 1,
+            "message": "未找到 Zeek 日志文件，请先启动 Zeek 抓包或手动产生日志",
+            "data": {"zeek_info": get_zeek_info()},
+        }), 404
+
+    # 转换为 CSV 字符串，再用现有分析流水线处理
+    csv_text = convert_to_csv(events_raw)
+    csv_reader = csv.DictReader(StringIO(csv_text))
+    events = list(parse_csv_rows(csv_reader))
+
+    if not events:
+        return jsonify({"code": 1, "message": "Zeek 日志解析后无有效事件"}), 400
+
+    update_analysis(analyze_events(events, source="Zeek 实时抓包分析"))
+    return jsonify({
+        "code": 0,
+        "data": {
+            "events_parsed": len(events),
+            "analysis": _last_analysis,
+        },
+    })
+
+
+@app.get("/api/collector/interfaces")
+def api_collector_interfaces():
+    """列出可用于 Zeek 抓包的网络接口"""
+    from src.collector.zeek_collector import list_interfaces
+    ifaces = list_interfaces()
+    info = get_zeek_info()
+    return jsonify({
+        "code": 0,
+        "data": {
+            "interfaces": ifaces,
+            "running": info.get("running", False),
+            "current_interface": info.get("interface", ""),
+        },
+    })
+
+
+# 设置 Zeek 事件回调 → 自动注入分析流水线
+def _on_zeek_events(events_raw: list[dict]) -> None:
+    """Zeek 采集到新事件时的回调函数"""
+    global _last_analysis
+    try:
+        csv_text = convert_to_csv(events_raw)
+        csv_reader = csv.DictReader(StringIO(csv_text))
+        events = list(parse_csv_rows(csv_reader))
+        if not events:
+            return
+        update_analysis(analyze_events(events, source="Zeek 实时抓包分析"))
+    except Exception:
+        pass
+
+
+# 注册回调
+set_event_callback(_on_zeek_events)
 
 
 @app.get("/api/llm/status")

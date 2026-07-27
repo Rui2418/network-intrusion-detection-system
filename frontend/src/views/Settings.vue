@@ -24,6 +24,74 @@
     </div>
 
     <div class="section">
+      <h3>Zeek 数据采集 (实时抓包)</h3>
+      <div class="zeek-status">
+        <div class="zeek-info">
+          <div class="zeek-row">
+            <span class="zeek-label">Zeek 状态:</span>
+            <span :class="'zeek-badge ' + (zeekInfo.installed ? 'ok' : 'na')">
+              {{ zeekInfo.installed ? '已安装' : '未安装' }}
+            </span>
+            <span v-if="zeekInfo.version" class="zeek-version">{{ zeekInfo.version }}</span>
+          </div>
+          <div class="zeek-row">
+            <span class="zeek-label">抓包状态:</span>
+            <span :class="'zeek-badge ' + (zeekInfo.running ? 'ok' : 'na')">
+              {{ zeekInfo.running ? '运行中' : '已停止' }}
+            </span>
+            <span v-if="zeekInfo.running" class="zeek-iface">接口: {{ zeekInfo.interface }}</span>
+          </div>
+          <div class="zeek-row">
+            <span class="zeek-label">Zeek 路径:</span>
+            <span class="zeek-path">{{ zeekInfo.zeek_path || '未找到' }}</span>
+          </div>
+          <div class="zeek-row">
+            <span class="zeek-label">日志目录:</span>
+            <span class="zeek-path">{{ zeekInfo.log_dir || '未设置' }}</span>
+          </div>
+        </div>
+        <div class="zeek-actions">
+          <div class="zeek-iface-select" v-if="!zeekInfo.running">
+            <label>监听的网络接口:</label>
+            <div class="iface-row">
+              <select v-model="selectedCaptureIface">
+                <option value="">自动选择</option>
+                <option v-for="iface in collectorIfaces" :key="iface" :value="iface">{{ iface }}</option>
+              </select>
+              <button class="btn-refresh" @click="refreshCollectorIfaces">刷新</button>
+            </div>
+          </div>
+          <div class="zeek-btn-row">
+            <button class="btn-start"
+              @click="startZeekCapture"
+              :disabled="zeekInfo.running || zeekBusy">
+              {{ zeekBusy ? '启动中...' : '启动抓包' }}
+            </button>
+            <button class="btn-stop"
+              @click="stopZeekCapture"
+              :disabled="!zeekInfo.running || zeekBusy">
+              {{ zeekBusy ? '停止中...' : '停止抓包' }}
+            </button>
+            <button class="btn-analyze"
+              @click="analyzeZeekLogs"
+              :disabled="zeekBusy">
+              分析 Zeek 日志
+            </button>
+            <button class="btn-refresh" @click="fetchZeekStatus">刷新状态</button>
+          </div>
+          <div class="zeek-result" v-if="zeekMsg">
+            <span :class="zeekMsgOk ? 'ok' : 'fail'">{{ zeekMsg }}</span>
+          </div>
+        </div>
+      </div>
+      <p class="hint">
+        Zeek 是一个开源网络流量分析框架。启动后会自动抓取指定接口的流量并生成结构化日志，
+        本系统将实时解析并分析。Windows 用户请在 WSL/Linux 虚拟机中运行 Zeek。
+        <a href="https://zeek.org" target="_blank">安装指南</a>
+      </p>
+    </div>
+
+    <div class="section">
       <h3>AI 智能分析配置</h3>
       <div class="ai-form">
         <div class="form-row">
@@ -108,6 +176,12 @@ export default {
       showKey: false, testing: false, saving: false,
       testOk: false, testDone: false, testMsg: '',
       availableModels: [],
+      zeekInfo: { installed: false, zeek_path: '', version: '', log_dir: '', running: false, interface: '' },
+      collectorIfaces: [],
+      selectedCaptureIface: '',
+      zeekBusy: false,
+      zeekMsg: '',
+      zeekMsgOk: false,
     }
   },
   methods: {
@@ -165,7 +239,63 @@ export default {
       this.saving = false
     },
   },
-  mounted() { this.refreshIfaces(); this.fetchLLMConfig() },
+    async fetchZeekStatus() {
+      try {
+        const { data } = await axios.get('/api/collector/status')
+        if (data.code === 0) this.zeekInfo = data.data
+      } catch (e) {}
+    },
+    async refreshCollectorIfaces() {
+      try {
+        const { data } = await axios.get('/api/collector/interfaces')
+        if (data.code === 0) {
+          this.collectorIfaces = data.data.interfaces || []
+          if (data.data.current_interface) this.selectedCaptureIface = data.data.current_interface
+        }
+      } catch (e) {}
+    },
+    async startZeekCapture() {
+      this.zeekBusy = true; this.zeekMsg = ''
+      try {
+        const { data } = await axios.post('/api/collector/start', { interface: this.selectedCaptureIface })
+        this.zeekMsgOk = data.code === 0
+        this.zeekMsg = data.data.message || (data.code === 0 ? '启动成功' : '启动失败')
+        if (data.code === 0) await this.fetchZeekStatus()
+      } catch (e) {
+        this.zeekMsgOk = false; this.zeekMsg = '请求失败'
+      }
+      this.zeekBusy = false
+    },
+    async stopZeekCapture() {
+      this.zeekBusy = true; this.zeekMsg = ''
+      try {
+        const { data } = await axios.post('/api/collector/stop')
+        this.zeekMsgOk = data.code === 0
+        this.zeekMsg = data.data.message || (data.code === 0 ? '已停止' : '停止失败')
+        if (data.code === 0) await this.fetchZeekStatus()
+      } catch (e) {
+        this.zeekMsgOk = false; this.zeekMsg = '请求失败'
+      }
+      this.zeekBusy = false
+    },
+    async analyzeZeekLogs() {
+      this.zeekBusy = true; this.zeekMsg = ''
+      try {
+        const { data } = await axios.post('/api/collector/analyze')
+        this.zeekMsgOk = data.code === 0
+        if (data.code === 0) {
+          const parsed = data.data.events_parsed || 0
+          this.zeekMsg = `分析完成: 解析 ${parsed} 个事件，生成了 ${data.data.analysis.alerts.length} 条告警`
+        } else {
+          this.zeekMsg = data.message || '分析失败'
+        }
+      } catch (e) {
+        this.zeekMsgOk = false; this.zeekMsg = '未找到 Zeek 日志'
+      }
+      this.zeekBusy = false
+    },
+  },
+  mounted() { this.refreshIfaces(); this.fetchLLMConfig(); this.fetchZeekStatus() },
 }
 </script>
 
@@ -219,4 +349,30 @@ export default {
 .test-result { font-size: 12px; }
 .test-result.ok { color: #2e7d32; font-weight: 600; }
 .test-result.fail { color: #d32f2f; }
+
+/* Zeek 采集器样式 */
+.zeek-status { display: flex; flex-direction: column; gap: 12px; }
+.zeek-info { display: flex; flex-direction: column; gap: 6px; background: #f8fafc; padding: 12px; border-radius: 6px; }
+.zeek-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.zeek-label { color: #78909c; min-width: 80px; }
+.zeek-badge { padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.zeek-badge.ok { background: #e8f5e9; color: #2e7d32; }
+.zeek-badge.na { background: #fbe9e7; color: #c62828; }
+.zeek-version { color: #546e7a; font-size: 11px; }
+.zeek-iface { color: #1565c0; font-size: 12px; }
+.zeek-path { color: #546e7a; font-family: monospace; font-size: 12px; }
+.zeek-actions { display: flex; flex-direction: column; gap: 10px; }
+.zeek-iface-select { display: flex; flex-direction: column; gap: 4px; }
+.zeek-iface-select label { font-size: 11px; color: #78909c; }
+.iface-row { display: flex; gap: 6px; }
+.iface-row select { padding: 5px 10px; border: 1px solid #d5dce6; border-radius: 4px; font-size: 13px; flex: 1; }
+.zeek-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-start { padding: 7px 16px; background: #2e7d32; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-stop { padding: 7px 16px; background: #c62828; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-analyze { padding: 7px 16px; background: #1565c0; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-refresh { padding: 7px 16px; background: #546e7a; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-start:disabled, .btn-stop:disabled, .btn-analyze:disabled, .btn-refresh:disabled { opacity: 0.5; cursor: default; }
+.zeek-result { padding: 8px 12px; background: #f8fafc; border-radius: 4px; font-size: 12px; }
+.zeek-result .ok { color: #2e7d32; }
+.zeek-result .fail { color: #c62828; }
 </style>

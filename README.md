@@ -68,7 +68,31 @@
 
 风险评分相关实现位于 [src/scoring/risk.py](./src/scoring/risk.py)，攻击链关联实现位于 [src/detector/correlation.py](./src/detector/correlation.py)，统一结果模型位于 [src/detector/models.py](./src/detector/models.py)。
 
-### 4. Web 界面与分析接口
+### 4. Zeek 实时抓包集成（新增）
+
+系统新增了对 [Zeek](https://zeek.org)（原名 Bro）的支持，将网络抓包功能无缝集成到分析流水线中。
+
+**Zeek 集成能力：**
+- 在指定网络接口上启动/停止 Zeek 抓包
+- 自动监控 Zeek 日志目录，增量解析新产生的日志行
+- 将 Zeek 的 `conn.log`（连接摘要）、`http.log`（HTTP 请求）、`ssl.log`（TLS 指纹）等日志统一转换为系统的 `LogEvent` 格式
+- 新事件实时注入分析流水线，结果通过 WebSocket 推送到前端
+- 在无 Zeek 环境下回退到离线日志解析模式
+
+**Zeek → LogEvent 字段映射：**
+
+| Zeek 日志  | 关键字段                                              | 映射到 LogEvent             |
+|------------|-------------------------------------------------------|-----------------------------|
+| conn.log   | ts, id.orig_h, id.resp_h, id.resp_p, proto, duration  | timestamp, source_ip,       |
+|            | orig_bytes                                            | target_ip, port, protocol,  |
+|            |                                                       | duration_ms, bytes_sent     |
+| http.log   | ts, method, host, uri, user_agent, status_code        | method, host, path,         |
+|            |                                                       | user_agent, status_code     |
+| ssl.log    | ts, server_name, ja3, ja3s                            | host, tls_fingerprint       |
+
+相关代码见 [src/collector/zeek_parser.py](./src/collector/zeek_parser.py)、[src/collector/zeek_collector.py](./src/collector/zeek_collector.py) 和 [zeek/ids.zeek](./zeek/ids.zeek)。
+
+### 5. Web 界面与分析接口
 
 项目提供 Flask Web 服务，支持页面访问和 JSON API 调用。当前后端已提供：
 
@@ -78,6 +102,15 @@
 - `GET /api/alerts/stats`：获取统计信息
 - `GET /api/alerts/recent`：获取最近告警
 - `GET /api/dashboard`：聚合 IDS 与防御模块状态
+
+此外新增了 Zeek 实时抓包相关的 API：
+
+- `GET /api/collector/status`：Zeek 安装与运行状态
+- `POST /api/collector/start`：启动 Zeek 抓包
+- `POST /api/collector/stop`：停止 Zeek 抓包
+- `GET /api/collector/logs`：列出 Zeek 日志文件
+- `POST /api/collector/analyze`：解析 Zeek 日志并执行分析
+- `GET /api/collector/interfaces`：列出可用网络接口
 
 `GET /api/sample` 和 `POST /api/analyze` 会返回统一分析结果，主要字段包括：
 
@@ -146,11 +179,18 @@ network intrusion detection system/
 │   ├── sample_logs.csv
 │   ├── sample_logs_extended.csv
 │   └── signatures.json
+├── zeek/                      # Zeek 抓包集成
+│   ├── README.md              # Zeek 集成使用说明
+│   └── ids.zeek               # Zeek 教学实验策略脚本
 ├── kernel_module/              # Linux 内核防御模块相关内容
 ├── frontend/                   # Vue 前端工程与构建产物
 ├── src/
 │   ├── app.py                  # Flask 应用与 API
 │   ├── defense.py              # 防御接口封装
+│   ├── collector/              # 数据采集层（新增）
+│   │   ├── __init__.py
+│   │   ├── zeek_parser.py      # Zeek 日志解析器
+│   │   └── zeek_collector.py   # Zeek 进程管理与实时监控
 │   ├── detector/
 │   │   ├── anomaly.py          # 异常检测与基线统计
 │   │   ├── correlation.py      # 攻击链关联与响应建议
