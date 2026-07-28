@@ -94,6 +94,203 @@ def test_live_lab_log_endpoint_analyzes_runtime_website_log():
     assert dashboard_ids["type_counts"]["SQL注入尝试"] == 3
 
 
+def test_lab_log_watcher_ignores_existing_log_until_it_changes(monkeypatch, tmp_path):
+    lab_log = tmp_path / "access_log.csv"
+    lab_log.write_text(
+        "timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint\n"
+        "2026-07-20T10:00:00,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,browser,4500,40,ja3-browser\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "LAB_ACCESS_LOG", lab_log)
+    previous_signature = app_module._lab_log_signature
+    previous_seen_rows = app_module._lab_log_seen_rows
+    app_module._lab_log_signature = app_module.lab_log_signature()
+    app_module._lab_log_seen_rows = app_module.lab_log_row_count()
+    previous_analysis = app_module._last_analysis
+    app_module._last_analysis = {
+        "events": 0,
+        "alerts": [],
+        "incidents": [],
+        "summary": {},
+        "baseline": {},
+        "metadata": {},
+        "source": "",
+        "recommendations": [],
+    }
+
+    try:
+        app_module.analyze_lab_log_if_changed()
+        assert app_module._last_analysis["events"] == 0
+        assert app_module._last_analysis["alerts"] == []
+    finally:
+        app_module._last_analysis = previous_analysis
+        app_module._lab_log_signature = previous_signature
+        app_module._lab_log_seen_rows = previous_seen_rows
+
+
+def test_lab_log_watcher_ignores_old_sql_rows_when_benign_row_is_appended(monkeypatch, tmp_path):
+    lab_log = tmp_path / "access_log.csv"
+    lab_log.write_text(
+        "timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint\n"
+        "2026-07-20T10:00:00,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,browser,4500,40,ja3-browser\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "LAB_ACCESS_LOG", lab_log)
+    previous_signature = app_module._lab_log_signature
+    previous_seen_rows = app_module._lab_log_seen_rows
+    previous_analysis = app_module._last_analysis
+    app_module._lab_log_signature = app_module.lab_log_signature()
+    app_module._lab_log_seen_rows = app_module.lab_log_row_count()
+    app_module._last_analysis = {
+        "events": 0,
+        "alerts": [],
+        "incidents": [],
+        "summary": {},
+        "baseline": {},
+        "metadata": {},
+        "source": "",
+        "recommendations": [],
+    }
+
+    try:
+        with lab_log.open("a", encoding="utf-8", newline="") as log_file:
+            log_file.write(
+                "2026-07-28T22:00:00,127.0.0.1,10.0.0.42,8001,/,200,,,GET,tcp,127.0.0.1,browser,680,30,ja3-browser\n"
+            )
+
+        app_module.analyze_lab_log_if_changed()
+
+        assert app_module._last_analysis["events"] == 1
+        assert not any(alert["alert_type"] == "SQL注入尝试" for alert in app_module._last_analysis["alerts"])
+        assert app_module._lab_log_seen_rows == 2
+    finally:
+        app_module._last_analysis = previous_analysis
+        app_module._lab_log_signature = previous_signature
+        app_module._lab_log_seen_rows = previous_seen_rows
+
+
+def test_lab_log_watcher_detects_sql_in_new_appended_rows(monkeypatch, tmp_path):
+    lab_log = tmp_path / "access_log.csv"
+    lab_log.write_text(
+        "timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint\n"
+        "2026-07-28T22:00:00,127.0.0.1,10.0.0.42,8001,/,200,,,GET,tcp,127.0.0.1,browser,680,30,ja3-browser\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "LAB_ACCESS_LOG", lab_log)
+    previous_signature = app_module._lab_log_signature
+    previous_seen_rows = app_module._lab_log_seen_rows
+    previous_analysis = app_module._last_analysis
+    app_module._lab_log_signature = app_module.lab_log_signature()
+    app_module._lab_log_seen_rows = app_module.lab_log_row_count()
+    app_module._last_analysis = {
+        "events": 0,
+        "alerts": [],
+        "incidents": [],
+        "summary": {},
+        "baseline": {},
+        "metadata": {},
+        "source": "",
+        "recommendations": [],
+    }
+
+    try:
+        with lab_log.open("a", encoding="utf-8", newline="") as log_file:
+            log_file.write(
+                "2026-07-28T22:00:02,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,browser,4500,40,ja3-browser\n"
+            )
+
+        app_module.analyze_lab_log_if_changed()
+
+        sql_alert = next(alert for alert in app_module._last_analysis["alerts"] if alert["alert_type"] == "SQL注入尝试")
+        assert app_module._last_analysis["events"] == 1
+        assert sql_alert["count"] == 1
+        assert sql_alert["timestamp"] == "2026-07-28T22:00:02"
+        assert app_module._lab_log_seen_rows == 2
+    finally:
+        app_module._last_analysis = previous_analysis
+        app_module._lab_log_signature = previous_signature
+        app_module._lab_log_seen_rows = previous_seen_rows
+
+
+def test_lab_log_watcher_keeps_bruteforce_alert_after_successful_login(monkeypatch, tmp_path):
+    lab_log = tmp_path / "access_log.csv"
+    lab_log.write_text(
+        "timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "LAB_ACCESS_LOG", lab_log)
+    previous_signature = app_module._lab_log_signature
+    previous_seen_rows = app_module._lab_log_seen_rows
+    previous_analysis = app_module._last_analysis
+    app_module._lab_log_signature = app_module.lab_log_signature()
+    app_module._lab_log_seen_rows = app_module.lab_log_row_count()
+    app_module._last_analysis = app_module.empty_analysis()
+
+    try:
+        with lab_log.open("a", encoding="utf-8", newline="") as log_file:
+            for index in range(5):
+                log_file.write(
+                    f"2026-07-28T22:00:{index:02d},127.0.0.1,10.0.0.42,8001,/api/login,401,admin,false,POST,tcp,127.0.0.1,browser,220,20,ja3-browser\n"
+                )
+
+        app_module.analyze_lab_log_if_changed()
+
+        assert any(alert["alert_type"] == "暴力登录" for alert in app_module._last_analysis["alerts"])
+        brute_alert_count = len(app_module._last_analysis["alerts"])
+
+        with lab_log.open("a", encoding="utf-8", newline="") as log_file:
+            log_file.write(
+                "2026-07-28T22:01:00,127.0.0.1,10.0.0.42,8001,/api/login,200,2024001,true,POST,tcp,127.0.0.1,browser,680,30,ja3-browser\n"
+            )
+
+        app_module.analyze_lab_log_if_changed()
+
+        assert app_module._last_analysis["events"] == 6
+        assert len(app_module._last_analysis["alerts"]) == brute_alert_count
+        assert any(alert["alert_type"] == "暴力登录" for alert in app_module._last_analysis["alerts"])
+        assert app_module._lab_log_seen_rows == 6
+    finally:
+        app_module._last_analysis = previous_analysis
+        app_module._lab_log_signature = previous_signature
+        app_module._lab_log_seen_rows = previous_seen_rows
+
+
+    lab_log = tmp_path / "access_log.csv"
+    monkeypatch.setattr(app_module, "LAB_ACCESS_LOG", lab_log)
+    previous_signature = app_module._lab_log_signature
+    previous_seen_rows = app_module._lab_log_seen_rows
+    previous_analysis = app_module._last_analysis
+    app_module._lab_log_signature = None
+    app_module._lab_log_seen_rows = None
+    app_module._last_analysis = {
+        "events": 0,
+        "alerts": [],
+        "incidents": [],
+        "summary": {},
+        "baseline": {},
+        "metadata": {},
+        "source": "",
+        "recommendations": [],
+    }
+
+    try:
+        app_module.analyze_lab_log_if_changed()
+        lab_log.write_text(
+            "timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint\n"
+            "2026-07-20T10:00:00,127.0.0.1,10.0.0.42,8001,/api/grades?course=信息安全导论' or 1=1--,200,2024001,,GET,tcp,127.0.0.1,browser,4500,40,ja3-browser\n",
+            encoding="utf-8",
+        )
+        app_module.analyze_lab_log_if_changed()
+        assert app_module._last_analysis["events"] == 0
+        assert app_module._last_analysis["alerts"] == []
+        assert app_module._lab_log_signature == app_module.lab_log_signature()
+        assert app_module._lab_log_seen_rows == 1
+    finally:
+        app_module._last_analysis = previous_analysis
+        app_module._lab_log_signature = previous_signature
+        app_module._lab_log_seen_rows = previous_seen_rows
+
+
 def test_alert_export_cold_start_uses_sample_data():
     previous_analysis = app_module._last_analysis
     app_module._last_analysis = {
@@ -283,6 +480,44 @@ def test_dashboard_reports_mock_ips_availability(monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["ips"]["availability"] == "mock"
+
+
+def test_dashboard_still_loads_after_clearing_alerts(monkeypatch, tmp_path):
+    lab_log = tmp_path / "access_log.csv"
+    lab_log.write_text(
+        "timestamp,source_ip,target_ip,port,path,status_code,username,login_success,method,protocol,host,user_agent,bytes_sent,duration_ms,tls_fingerprint\n"
+        "2026-07-28T22:00:00,127.0.0.1,10.0.0.42,8001,/api/login,401,admin,false,POST,tcp,127.0.0.1,browser,220,20,ja3-browser\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "LAB_ACCESS_LOG", lab_log)
+    emitted = []
+    monkeypatch.setattr(app_module.socketio, "emit", lambda event, data, **kwargs: emitted.append((event, data, kwargs)))
+    previous_analysis = app_module._last_analysis
+    previous_signature = app_module._lab_log_signature
+    previous_seen_rows = app_module._lab_log_seen_rows
+
+    try:
+        app_module._lab_log_signature = app_module.lab_log_signature()
+        app_module._lab_log_seen_rows = app_module.lab_log_row_count()
+        with app.test_client() as client:
+            client.get("/api/sample")
+            clear_response = client.post("/api/alerts/clear")
+            dashboard_response = client.get("/api/dashboard")
+
+        assert clear_response.status_code == 200
+        assert dashboard_response.status_code == 200
+        ids = dashboard_response.get_json()["ids"]
+        assert ids["events"] == 0
+        assert ids["total_alerts"] == 0
+        assert ids["summary"]["by_level"] == {"高危": 0, "中危": 0, "低危": 0}
+        assert app_module._lab_log_seen_rows == 0
+        assert lab_log.read_text(encoding="utf-8").count("\n") == 1
+        assert emitted[-1][0] == "analysis_result"
+        assert emitted[-1][1]["alerts"] == []
+    finally:
+        app_module._last_analysis = previous_analysis
+        app_module._lab_log_signature = previous_signature
+        app_module._lab_log_seen_rows = previous_seen_rows
 
 
 def upload_csv(content: str):

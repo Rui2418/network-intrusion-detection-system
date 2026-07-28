@@ -22,14 +22,14 @@
           <option value="异常状态码">异常状态码</option>
         </select>
         <button @click="paused = !paused">{{ paused ? '恢复' : '暂停' }}</button>
-        <button @click="alerts = []">清空</button>
+        <button @click="clearAlerts">清空日志</button>
       </div>
     </div>
 
     <div class="stream" ref="streamEl">
       <div class="alert-row" v-for="(a, i) in filteredAlerts" :key="i"
         :class="'sev-' + (a.level || '低危')">
-        <span class="a-time">{{ a.timestamp || '--' }}</span>
+        <span class="a-time">{{ formatTimestamp(a.timestamp || a.first_seen || a.last_seen) }}</span>
         <span class="a-badge" :class="'badge-' + (a.level || '低危')">{{ a.level || '低危' }}</span>
         <span class="a-type">{{ a.alert_type }}</span>
         <span class="a-src">{{ a.source_ip }}</span>
@@ -70,12 +70,33 @@ export default {
     highCount() { return this.alerts.filter(a => a.level === '中危').length },
   },
   methods: {
+    alertTimeValue(alert) {
+      const raw = alert.timestamp || alert.first_seen || alert.last_seen || ''
+      const value = Date.parse(raw)
+      return Number.isNaN(value) ? 0 : value
+    },
+    formatTimestamp(raw) {
+      if (!raw) return '--'
+      const date = new Date(raw)
+      if (Number.isNaN(date.getTime())) return raw
+      const pad = value => String(value).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    },
     fetchAlerts() {
       axios.get('/api/alerts/recent', { params: { count: 200 } }).then(({ data }) => {
         if (data.items) {
-          this.alerts = data.items.sort((a, b) => b.score - a.score)
+          this.alerts = data.items.sort((a, b) => this.alertTimeValue(b) - this.alertTimeValue(a))
         }
       }).catch(() => {})
+    },
+    async clearAlerts() {
+      if (!window.confirm('确定清空实时监控日志和当前告警吗？')) return
+      try {
+        await axios.post('/api/alerts/clear', {})
+        this.alerts = []
+      } catch (error) {
+        window.alert('清空失败，请稍后重试')
+      }
     },
   },
   mounted() {

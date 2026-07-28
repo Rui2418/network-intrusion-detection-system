@@ -69,37 +69,60 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 LAB_ACCESS_LOG = BASE_DIR / "交大学生成绩管理系统_vuln_lab" / "data" / "access_log.csv"
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
+LAB_ACCESS_LOG_FIELDS = [
+    "timestamp",
+    "source_ip",
+    "target_ip",
+    "port",
+    "path",
+    "status_code",
+    "username",
+    "login_success",
+    "method",
+    "protocol",
+    "host",
+    "user_agent",
+    "bytes_sent",
+    "duration_ms",
+    "tls_fingerprint",
+]
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="/")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
-_last_analysis = to_jsonable(AnalysisResult(
-    events=0,
-    alerts=[],
-    incidents=[],
-    summary={
-        "高危": 0,
-        "中危": 0,
-        "低危": 0,
-        "by_level": {"高危": 0, "中危": 0, "低危": 0},
-        "by_type": {},
-        "by_category": {},
-        "top_sources": [],
-        "top_targets": [],
-        "timeline": [],
-    },
-    baseline={
-        "request_rate_per_ip": [],
-        "unique_ports_per_ip": [],
-        "login_failures_per_ip": [],
-        "data_coverage": {"bytes_sent": False, "duration_ms": False, "tls_fingerprint": False},
-    },
-    metadata={"detectors": ["rule", "signature", "anomaly", "correlation"], "generated_at": ""},
-    source="",
-    recommendations=[],
-))
+
+def empty_analysis() -> dict[str, object]:
+    return to_jsonable(AnalysisResult(
+        events=0,
+        alerts=[],
+        incidents=[],
+        summary={
+            "高危": 0,
+            "中危": 0,
+            "低危": 0,
+            "by_level": {"高危": 0, "中危": 0, "低危": 0},
+            "by_type": {},
+            "by_category": {},
+            "top_sources": [],
+            "top_targets": [],
+            "timeline": [],
+        },
+        baseline={
+            "request_rate_per_ip": [],
+            "unique_ports_per_ip": [],
+            "login_failures_per_ip": [],
+            "data_coverage": {"bytes_sent": False, "duration_ms": False, "tls_fingerprint": False},
+        },
+        metadata={"detectors": ["rule", "signature", "anomaly", "correlation"], "generated_at": ""},
+        source="",
+        recommendations=[],
+    ))
+
+
+_last_analysis = empty_analysis()
 _lab_log_signature: tuple[int, int] | None = None
+_lab_log_seen_rows: int | None = None
 _lab_watcher_started = False
 _lab_watcher_lock = threading.Lock()
 
@@ -224,24 +247,12 @@ def export_alerts():
 
 @app.post("/api/alerts/clear")
 def api_clear_alerts():
-    global _last_analysis
-    _last_analysis = AnalysisResult(
-        events=0, alerts=[], incidents=[],
-        summary={
-            "高危": 0, "中危": 0, "低危": 0,
-            "by_level": {"高危": 0, "中危": 0, "低危": 0},
-            "by_type": {}, "by_category": {},
-            "top_sources": [], "top_targets": [], "timeline": [],
-        },
-        baseline={
-            "request_rate_per_ip": [],
-            "unique_ports_per_ip": [],
-            "login_failures_per_ip": [],
-            "data_coverage": {"bytes_sent": False, "duration_ms": False, "tls_fingerprint": False},
-        },
-        metadata={"detectors": ["rule", "signature", "anomaly", "correlation"], "generated_at": ""},
-        source="", recommendations=[],
-    )
+    global _last_analysis, _lab_log_signature, _lab_log_seen_rows
+    _last_analysis = empty_analysis()
+    clear_lab_access_log()
+    _lab_log_signature = lab_log_signature()
+    _lab_log_seen_rows = lab_log_row_count()
+    socketio.emit("analysis_result", _last_analysis)
     return jsonify({"code": 0, "message": "cleared"})
 
 
@@ -312,11 +323,111 @@ def filter_alerts(alerts: list[dict[str, object]], alert_type: str = "", severit
 
 
 def update_analysis(result: dict[str, object], remember_lab_log: bool = False) -> None:
-    global _last_analysis, _lab_log_signature
+    global _last_analysis, _lab_log_signature, _lab_log_seen_rows
     _last_analysis = result
     if remember_lab_log:
         _lab_log_signature = lab_log_signature()
+        _lab_log_seen_rows = lab_log_row_count()
     socketio.emit("analysis_result", _last_analysis)
+
+
+def update_lab_incremental_analysis(result: dict[str, object]) -> None:
+    global _last_analysis
+    existing_alerts = list(_last_analysis.get("alerts", []))
+    new_alerts = list(result.get("alerts", []))
+    merged_alerts = sorted(
+        [*existing_alerts, *new_alerts],
+        key=lambda alert: alert.get("timestamp") or alert.get("first_seen") or alert.get("last_seen") or "",
+        reverse=True,
+    )
+
+    if not merged_alerts and not _last_analysis.get("events"):
+        _last_analysis = result
+    else:
+        _last_analysis = {
+            **_last_analysis,
+            "events": int(_last_analysis.get("events") or 0) + int(result.get("events") or 0),
+            "alerts": merged_alerts,
+            "incidents": merge_unique_items(_last_analysis.get("incidents", []), result.get("incidents", [])),
+            "summary": summarize_alert_dicts(merged_alerts),
+            "baseline": result.get("baseline") or _last_analysis.get("baseline", {}),
+            "metadata": result.get("metadata") or _last_analysis.get("metadata", {}),
+            "source": "靶场实时访问日志",
+            "recommendations": merge_unique_items(_last_analysis.get("recommendations", []), result.get("recommendations", [])),
+        }
+    socketio.emit("analysis_result", _last_analysis)
+
+
+def merge_unique_items(existing: object, new: object) -> list[dict[str, object]]:
+    merged = []
+    seen = set()
+    for item in [*(existing or []), *(new or [])]:
+        if isinstance(item, dict):
+            key = repr(sorted(item.items()))
+        else:
+            key = repr(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
+def summarize_alert_dicts(alerts: list[dict[str, object]]) -> dict[str, object]:
+    by_level = {"高危": 0, "中危": 0, "低危": 0}
+    by_type: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    source_counts: dict[str, int] = {}
+    target_counts: dict[str, int] = {}
+    timeline: dict[str, int] = {}
+    total_hits = 0
+
+    for alert in alerts:
+        hits = int(alert.get("count") or 1)
+        level = str(alert.get("level") or "低危")
+        alert_type = str(alert.get("alert_type") or "未知")
+        category = str(alert.get("category") or "未知")
+        source_ip = str(alert.get("source_ip") or "未知")
+        target = str(alert.get("target") or "未知")
+        timestamp = str(alert.get("timestamp") or alert.get("first_seen") or alert.get("last_seen") or "")
+
+        by_level[level] = by_level.get(level, 0) + hits
+        by_type[alert_type] = by_type.get(alert_type, 0) + hits
+        by_category[category] = by_category.get(category, 0) + hits
+        source_counts[source_ip] = source_counts.get(source_ip, 0) + hits
+        target_counts[target] = target_counts.get(target, 0) + hits
+        total_hits += hits
+        if timestamp:
+            timeline[timestamp] = timeline.get(timestamp, 0) + hits
+
+    return {
+        "高危": by_level.get("高危", 0),
+        "中危": by_level.get("中危", 0),
+        "低危": by_level.get("低危", 0),
+        "total_hits": total_hits,
+        "by_level": by_level,
+        "by_type": by_type,
+        "by_category": by_category,
+        "top_sources": [
+            {"source_ip": source_ip, "count": count}
+            for source_ip, count in sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ],
+        "top_targets": [
+            {"target": target, "count": count}
+            for target, count in sorted(target_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        ],
+        "timeline": [
+            {"timestamp": timestamp, "count": count}
+            for timestamp, count in sorted(timeline.items())
+        ],
+    }
+
+
+def clear_lab_access_log() -> None:
+    if not LAB_ACCESS_LOG.parent.exists():
+        return
+    with LAB_ACCESS_LOG.open("w", encoding="utf-8", newline="") as log_file:
+        csv.DictWriter(log_file, fieldnames=LAB_ACCESS_LOG_FIELDS).writeheader()
 
 
 def lab_log_signature() -> tuple[int, int] | None:
@@ -326,18 +437,45 @@ def lab_log_signature() -> tuple[int, int] | None:
     return (stat.st_mtime_ns, stat.st_size)
 
 
+def lab_log_row_count() -> int | None:
+    if not LAB_ACCESS_LOG.exists() or LAB_ACCESS_LOG.stat().st_size == 0:
+        return None
+    with LAB_ACCESS_LOG.open("r", encoding="utf-8", newline="") as log_file:
+        return max(sum(1 for _ in log_file) - 1, 0)
+
+
+def parse_lab_log_new_rows(start_row: int) -> list:
+    with LAB_ACCESS_LOG.open("r", encoding="utf-8", newline="") as log_file:
+        reader = csv.DictReader(log_file)
+        return list(parse_csv_rows(row for index, row in enumerate(reader) if index >= start_row))
+
+
+_lab_log_signature = lab_log_signature()
+_lab_log_seen_rows = lab_log_row_count()
+
+
 def analyze_lab_log_if_changed() -> None:
-    global _lab_log_signature
+    global _lab_log_signature, _lab_log_seen_rows
     signature = lab_log_signature()
-    if signature is None or signature == _lab_log_signature:
+    if signature is None:
+        _lab_log_signature = None
+        _lab_log_seen_rows = None
+        return
+    if signature == _lab_log_signature:
+        return
+    if _lab_log_seen_rows is None:
+        _lab_log_signature = signature
+        _lab_log_seen_rows = lab_log_row_count()
         return
     try:
-        events = parse_csv_log(LAB_ACCESS_LOG)
+        events = parse_lab_log_new_rows(_lab_log_seen_rows)
     except (KeyError, TypeError, ValueError, UnicodeDecodeError):
         return
+    _lab_log_signature = signature
+    _lab_log_seen_rows = lab_log_row_count()
     if not events:
         return
-    update_analysis(analyze_events(events, source="靶场实时访问日志"), remember_lab_log=True)
+    update_lab_incremental_analysis(analyze_events(events, source="靶场实时访问日志"))
 
 
 def lab_log_watcher() -> None:

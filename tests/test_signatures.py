@@ -55,6 +55,25 @@ def test_signature_detection_matches_lab_course_sqli_payload():
     assert any(alert.alert_type == "SQL注入尝试" for alert in alerts)
 
 
+def test_signature_detection_ignores_plain_double_dash_path():
+    rows = [
+        {
+            "timestamp": "2026-07-20T10:00:00",
+            "source_ip": "192.168.1.100",
+            "target_ip": "10.0.0.1",
+            "port": "80",
+            "path": "/assets/course--intro.html",
+            "status_code": "200",
+            "username": "",
+            "login_success": "",
+        }
+    ]
+
+    alerts = detect_signature_attacks(list(parse_csv_rows(rows)))
+
+    assert not any(alert.alert_type == "SQL注入尝试" for alert in alerts)
+
+
 def test_signature_detection_matches_command_injection():
     rows = [
         {

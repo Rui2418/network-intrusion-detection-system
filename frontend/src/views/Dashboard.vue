@@ -90,6 +90,25 @@ export default {
   methods: {
     fmtNum(n) { return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n) },
     fmtTime(s) { s = parseInt(s); const m = Math.floor(s/60); return m > 0 ? `${m}m ${s%60}s` : `${s}s` },
+    normalizeIds(data = {}) {
+      const summary = data.summary || {}
+      const alerts = data.alerts || []
+      const totalHits = summary.total_hits ?? alerts.reduce((sum, alert) => sum + Number(alert.count || 1), 0)
+      const scoreTotal = alerts.reduce((sum, alert) => sum + Number(alert.score || 0), 0)
+      return {
+        events: data.events || 0,
+        total_alerts: data.total_alerts ?? alerts.length,
+        total_hits: data.total_hits ?? totalHits,
+        summary,
+        type_counts: data.type_counts || summary.by_type || {},
+        severity_counts: data.severity_counts || summary.by_level || {},
+        top_sources: data.top_sources || (summary.top_sources || []).map(item => ({ ip: item.source_ip || item.ip || '未知', count: item.count || 0 })),
+        avg_score: data.avg_score ?? (alerts.length ? Number((scoreTotal / alerts.length).toFixed(1)) : 0),
+        source: data.source || '',
+        by_category: data.by_category || summary.by_category || {},
+        timeline: data.timeline || summary.timeline || [],
+      }
+    },
     levelCount(level) {
       const summary = this.ids?.summary || {}
       return summary?.by_level?.[level] ?? summary?.[level] ?? 0
@@ -137,7 +156,7 @@ export default {
       this.loading = true
       try {
         const { data } = await axios.get('/api/dashboard')
-        this.ids = data.ids || this.ids
+        this.ids = this.normalizeIds(data.ids || this.ids)
         this.ips = data.ips || this.ips
         this.$nextTick(() => this.updateCharts())
       } catch (e) {}
@@ -161,7 +180,7 @@ export default {
       this.wsConnected = true
     })
     this.socket.on('analysis_result', (data) => {
-      this.ids = data || this.ids
+      this.ids = this.normalizeIds(data || this.ids)
       this.lastWsUpdate = Date.now()
       this.$nextTick(() => this.updateCharts())
     })

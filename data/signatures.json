@@ -17,8 +17,7 @@
       "(?i)\\bbenchmark\\s*\\(",
       "(?i)\\binformation_schema\\b",
       "(?i)\\bgroup\\s+by\\s+\\d+\\s+having\\b",
-      "(?i)\\bwaitfor\\s+delay\\s+['\"]\\d+:\\d+:\\d+['\"]",
-      "(?i)--\\s"
+      "(?i)\\bwaitfor\\s+delay\\s+['\"]\\d+:\\d+:\\d+['\"]"
     ],
     "base_score": 60,
     "confidence": 0.9,

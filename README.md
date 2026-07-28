@@ -176,11 +176,10 @@ network intrusion detection system/
 ### 软件要求
 
 - Python 3.10 及以上
-- Flask
-- flask-cors
-- pytest
+- Node.js 18 及以上
+- 现代浏览器（Chrome / Edge）
 
-当前 Python 依赖见 [requirements.txt](./requirements.txt)。
+Python 依赖见 [requirements.txt](./requirements.txt)，前端依赖见 [frontend/package.json](./frontend/package.json)。
 
 ### 硬件与系统建议
 
@@ -195,26 +194,114 @@ network intrusion detection system/
 
 ## 快速开始
 
-安装依赖：
+先进入项目根目录：
+
+```bash
+cd "C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system"
+```
+
+安装后端依赖：
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-启动后端：
+安装前端依赖：
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+### 方式一：开发模式运行
+
+先启动后端服务：
 
 ```bash
 python run.py
 ```
 
-启动后访问浏览器中的本地 Flask 地址，加载示例数据或上传 CSV 文件即可查看检测结果。
+后端默认监听：
+
+```text
+http://127.0.0.1:5000
+```
+
+再打开另一个终端启动前端开发服务：
+
+```bash
+cd "C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/frontend"
+npm run dev
+```
+
+浏览器访问前端开发服务输出的本地地址，通常是：
+
+```text
+http://localhost:5173
+```
+
+### 方式二：构建后由 Flask 统一访问
+
+如果只想启动一个服务，可以先构建前端：
+
+```bash
+cd frontend
+npm run build
+cd ..
+```
+
+然后启动后端：
+
+```bash
+python run.py
+```
+
+浏览器访问：
+
+```text
+http://127.0.0.1:5000
+```
+
+此时 Flask 会优先使用 `frontend/dist` 中的构建产物，并继续提供所有 `/api/...` 接口。
+
+### 基本使用流程
+
+启动系统后，可以在页面中加载内置示例数据，或上传符合格式的 CSV 日志文件进行分析。分析结果会展示 IDS 告警、风险等级、攻击链事件、基线统计和响应建议。
+
+在 Windows 或未加载 Linux 内核模块的环境下，防御模块会自动进入模拟模式。此时防御规则的新增、修改、删除和状态展示仍可用于课程演示，但不会真正修改系统防火墙规则。
+
+### 靶场联动运行
+
+如果需要演示真实网站访问日志联动，另开一个终端启动靶场：
+
+```bash
+cd "C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/交大学生成绩管理系统_vuln_lab"
+python app.py
+```
+
+靶场默认访问地址：
+
+```text
+http://127.0.0.1:8001
+```
+
+靶场运行后会把访问记录写入 `交大学生成绩管理系统_vuln_lab/data/access_log.csv`。回到 IDS 页面后，使用“分析靶场实时日志”即可读取这份日志并生成告警。靶场的演示账号和脚本命令见 [交大学生成绩管理系统_vuln_lab/README.md](./交大学生成绩管理系统_vuln_lab/README.md)。
 
 ## 测试
 
-运行自动化测试：
+运行后端自动化测试：
 
 ```bash
 python -m pytest
+```
+
+检查前端是否可以正常构建：
+
+```bash
+cd frontend
+npm run build
+cd ..
 ```
 
 当前测试重点覆盖：
