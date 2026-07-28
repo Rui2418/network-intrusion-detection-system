@@ -470,6 +470,22 @@ def test_defense_mock_mode_persists_rule_crud(monkeypatch):
     assert missing_delete_response.status_code == 404
 
 
+def test_defense_record_stats_updates_mock_drop_count(monkeypatch):
+    monkeypatch.setattr(defense_module, "is_kernel_available", lambda: False)
+    defense_module.clear_stats()
+
+    with app.test_client() as client:
+        response = client.post("/api/defense/stats/record", json={"action": "drop", "protocol": "tcp"})
+
+    assert response.status_code == 200
+    stats = response.get_json()["data"]["stats"]
+    assert stats["total_checked"] == 1
+    assert stats["total_dropped"] == 1
+    assert stats["total_accepted"] == 0
+    assert stats["drop_rate"] == 100
+    assert stats["protocols"]["tcp"] == 1
+
+
 def test_dashboard_reports_mock_ips_availability(monkeypatch):
     monkeypatch.setattr(app_module, "defense_status", lambda: {"enabled": False, "default_policy": "accept", "rule_count": 0, "uptime_seconds": 0})
     monkeypatch.setattr(app_module, "defense_get_stats", lambda: {"total_checked": 0, "total_dropped": 0, "total_accepted": 0, "drop_rate": 0, "protocols": {"icmp": 0, "tcp": 0, "udp": 0}})

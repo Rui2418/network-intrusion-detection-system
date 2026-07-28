@@ -11,6 +11,7 @@ sys.path.insert(0, str(LAB_DIR))
 sys.path.insert(0, str(IDS_DIR))
 sys.path.insert(0, str(LAB_DIR / "scripts"))
 
+import app as lab_app_module  # noqa: E402
 from app import ACCESS_LOG, app, reset_state  # noqa: E402
 from demo_attacks import require_local_target  # noqa: E402
 from src.parser.log_parser import parse_csv_log  # noqa: E402
@@ -106,7 +107,8 @@ def test_student_id_sqli_shape_stays_idor_parameter_only():
     assert response.get_json()["data"]["items"] == []
 
 
-def test_student_course_search_supports_normal_and_sqli_lab_queries():
+def test_student_course_search_supports_normal_and_sqli_lab_queries(monkeypatch):
+    monkeypatch.setattr(lab_app_module, "ips_enabled", lambda: False)
     with app.test_client() as client:
         token = login(client, "2024001", "123456")
         normal = client.get("/api/grades?course=信息安全导论", headers=auth(token))
@@ -138,7 +140,35 @@ def test_student_course_search_supports_normal_and_sqli_lab_queries():
         assert any("union%20select" in row["path"] for row in rows)
 
 
-def test_reset_keeps_vulnerable_site_seeded_without_showing_lab_controls():
+def test_ips_enabled_blocks_sqli_course_query_and_keeps_access_log(monkeypatch):
+    monkeypatch.setattr(lab_app_module, "ips_enabled", lambda: True)
+    recorded_drops = []
+    monkeypatch.setattr(lab_app_module, "record_ips_drop", lambda: recorded_drops.append(True))
+    payload = "信息安全导论' or 1=1--"
+    with app.test_client() as client:
+        token = login(client, "2024001", "123456")
+        response = client.get("/api/grades", query_string={"course": payload}, headers=auth(token))
+
+        assert response.status_code == 403
+        assert recorded_drops == [True]
+        assert response.get_json()["message"] == "IPS 已阻断 SQL 注入请求"
+
+        audit = client.get("/api/lab/audit").get_json()["data"]["items"]
+        assert any(
+            item["action"] == "ips_blocked_sqli"
+            and item["target"] == payload
+            and item["result"] == "denied"
+            for item in audit
+        )
+
+    rows = list(csv.DictReader(ACCESS_LOG.read_text(encoding="utf-8").splitlines()))
+    attack_row = next(row for row in rows if row["path"] == f"/api/grades?course={payload}")
+    assert attack_row["status_code"] == "403"
+    assert attack_row["username"] == "2024001"
+
+
+def test_reset_keeps_vulnerable_site_seeded_without_showing_lab_controls(monkeypatch):
+    monkeypatch.setattr(lab_app_module, "ips_enabled", lambda: False)
     with app.test_client() as client:
         reset = client.post("/api/lab/reset")
         assert reset.status_code == 200
@@ -183,7 +213,8 @@ def test_exported_log_file_can_be_parsed_by_ids_parser():
     assert any(event.path == "/shell?cmd=whoami" for event in events)
 
 
-def test_runtime_access_log_records_real_attack_request():
+def test_runtime_access_log_records_real_attack_request(monkeypatch):
+    monkeypatch.setattr(lab_app_module, "ips_enabled", lambda: False)
     payload = "信息安全导论' or 1=1--"
     with app.test_client() as client:
         token = login(client, "2024001", "123456")

@@ -4,12 +4,14 @@ import csv
 import copy
 import io
 import json
+import os
 import secrets
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote_plus
+from urllib.request import Request, urlopen
 
 from flask import Flask, Response, g, jsonify, render_template, request
 
@@ -18,6 +20,7 @@ DATA_DIR = BASE_DIR / "data"
 AUDIT_LOG = DATA_DIR / "audit_log.jsonl"
 ACCESS_LOG = DATA_DIR / "access_log.csv"
 EXPORT_LOG = DATA_DIR / "exported_logs.csv"
+IDS_BACKEND_URL = os.environ.get("IDS_BACKEND_URL", "http://127.0.0.1:5000").rstrip("/")
 CSV_FIELDS = [
     "timestamp",
     "source_ip",
@@ -214,6 +217,34 @@ def looks_like_sqli_probe(value: str) -> bool:
     return any(marker in normalized for marker in markers)
 
 
+def ips_enabled() -> bool:
+    if not IDS_BACKEND_URL:
+        return False
+    try:
+        with urlopen(f"{IDS_BACKEND_URL}/api/defense/status", timeout=0.5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return False
+    return bool(payload.get("data", {}).get("enabled"))
+
+
+def record_ips_drop() -> None:
+    if not IDS_BACKEND_URL:
+        return
+    payload = json.dumps({"action": "drop", "protocol": "tcp"}).encode("utf-8")
+    request_data = Request(
+        f"{IDS_BACKEND_URL}/api/defense/stats/record",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request_data, timeout=0.5):
+            pass
+    except Exception:
+        return
+
+
 def vulnerable_course_query(course: str) -> list[dict[str, Any]] | None:
     if lab_mode_enabled("sqli_probe") and looks_like_sqli_probe(course):
         return GRADE_RECORDS
@@ -339,6 +370,17 @@ def list_grades():
 
     student_id = request.args.get("student_id", "").strip()
     course = request.args.get("course", "").strip()
+    if lab_mode_enabled("sqli_probe") and looks_like_sqli_probe(course) and ips_enabled():
+        record_ips_drop()
+        audit(
+            "ips_blocked_sqli",
+            username=username or "anonymous",
+            target=course,
+            result="denied",
+            detail="ips_enabled_blocked_sqli_probe",
+        )
+        return jsonify({"code": 1, "message": "IPS 已阻断 SQL 注入请求"}), 403
+
     vulnerable_records = vulnerable_course_query(course)
     if vulnerable_records is not None:
         audit(

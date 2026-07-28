@@ -58,6 +58,7 @@ from src.defense import (
     get_stats as defense_get_stats,
     set_default_policy as defense_set_default,
     clear_stats as defense_clear_stats,
+    record_mock_packet as defense_record_mock_packet,
     is_mock_mode as defense_is_mock_mode,
 )
 from src.llm import (
@@ -688,6 +689,15 @@ def api_defense_delete_rule(rule_id):
 def api_defense_stats():
     try: return jsonify({"code": 0, "data": defense_get_stats()})
     except: return jsonify({"code": 0, "data": {"total_checked": 0, "total_dropped": 0, "total_accepted": 0, "drop_rate": 0}})
+
+@app.post("/api/defense/stats/record")
+def api_defense_record_stats():
+    data = request.get_json(silent=True) or {}
+    try:
+        recorded = defense_record_mock_packet(data.get("action", "accept"), data.get("protocol", "tcp"))
+        return jsonify({"code": 0, "data": {"recorded": recorded, "stats": defense_get_stats()}})
+    except Exception as e:
+        return jsonify({"code": 1, "message": f"记录统计失败: {e}"}), 500
 
 @app.post("/api/defense/stats/clear")
 def api_defense_clear_stats():

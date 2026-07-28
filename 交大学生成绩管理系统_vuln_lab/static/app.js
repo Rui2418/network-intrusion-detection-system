@@ -98,9 +98,15 @@ async function loadGrades({ studentId = '', course = '' } = currentGradeQuery())
   if (studentId) params.set('student_id', studentId)
   if (course) params.set('course', course)
   const query = params.size ? `?${params.toString()}` : ''
-  const data = await requestJson(`/api/grades${query}`, { headers: authHeaders() })
-  state.grades = data.items || []
-  renderGrades()
+  try {
+    const data = await requestJson(`/api/grades${query}`, { headers: authHeaders() })
+    state.grades = data.items || []
+    renderGrades()
+  } catch (error) {
+    state.grades = []
+    renderGrades()
+    throw error
+  }
 }
 
 function startAutoRefresh() {

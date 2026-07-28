@@ -184,6 +184,23 @@ def list_rules():
             os.close(fd)
 
 
+def record_mock_packet(action="accept", protocol="tcp"):
+    if not is_mock_mode():
+        return False
+    normalized_protocol = str(protocol or "tcp").lower()
+    if normalized_protocol not in _MOCK_STATS["protocols"]:
+        normalized_protocol = "tcp"
+    _MOCK_STATS["total_checked"] += 1
+    _MOCK_STATS["protocols"][normalized_protocol] += 1
+    if action == "drop":
+        _MOCK_STATS["total_dropped"] += 1
+    else:
+        _MOCK_STATS["total_accepted"] += 1
+    total_checked = _MOCK_STATS["total_checked"]
+    _MOCK_STATS["drop_rate"] = round(_MOCK_STATS["total_dropped"] / total_checked * 100, 1) if total_checked else 0
+    return True
+
+
 def get_stats():
     if is_mock_mode():
         return copy.deepcopy(_MOCK_STATS)
