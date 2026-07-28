@@ -1,2 +1,0 @@
-{"timestamp": "2026-07-20T16:02:17", "username": "2024001", "action": "vulnerable_course_query", "target": "信息安全导论' or 1=1--", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": "lab_sqli_bypass_returned_all_grades"}
-{"timestamp": "2026-07-20T16:02:18", "username": "2024001", "action": "vulnerable_course_query", "target": "信息安全导论' or 1=1--", "result": "ok", "scenario": "sqli_probe", "simulated": true, "detail": "lab_sqli_bypass_returned_all_grades"}

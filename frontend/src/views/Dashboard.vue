@@ -38,8 +38,8 @@
     <div class="charts-row">
       <div class="chart-panel"><div class="panel-title">协议分布 (ICMP/TCP/UDP)</div><div ref="protoChart" class="cbox-sm"></div></div>
       <div class="chart-panel"><div class="panel-title">{{ ips.availability === 'available' ? '内核模块已连接' : '内核模块未加载 (模拟)' }}</div>
-        <div style="padding: 40px; text-align: center; color: #78909c;">
-          {{ ips.availability === 'available' ? '✅ Linux IPS 内核模块正常运行中' : '⚠ 未检测到 /dev/firewall 设备，\n防御功能以模拟模式运行' }}
+        <div style="padding: 40px; text-align: center; color: #78909c; white-space: pre-line;">
+          {{ ips.availability === 'available' ? 'Linux IPS 内核模块正常运行中' : '未检测到 /dev/firewall 设备，\n防御功能以模拟模式运行' }}
         </div>
       </div>
     </div>

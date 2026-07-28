@@ -1,3 +1,6 @@
+import copy
+import ipaddress
+import socket
 import struct
 import os
 import sys
@@ -24,12 +27,40 @@ else:
 
 FWRULE_FMT = 'IIIIIHHIIIIIII'
 
+_MOCK_RULES = []
+_MOCK_NEXT_RULE_ID = 1
+_MOCK_ENABLED = False
+_MOCK_DEFAULT_POLICY = "accept"
+_MOCK_STATS = {
+    "total_checked": 0,
+    "total_dropped": 0,
+    "total_accepted": 0,
+    "drop_rate": 0,
+    "protocols": {"icmp": 0, "tcp": 0, "udp": 0},
+}
+
+
+def is_kernel_available():
+    return IS_LINUX and os.path.exists(DEVICE_PATH)
+
+
+def is_mock_mode():
+    return not is_kernel_available()
+
+
 def _mock_data():
-    return {"enabled": False, "default_policy": "accept", "rule_count": 0, "uptime_seconds": 0}
+    return {
+        "enabled": _MOCK_ENABLED,
+        "default_policy": _MOCK_DEFAULT_POLICY,
+        "rule_count": len(_MOCK_RULES),
+        "uptime_seconds": 0,
+    }
 
 
 def set_enable(enabled):
-    if not IS_LINUX or not os.path.exists(DEVICE_PATH):
+    global _MOCK_ENABLED
+    if is_mock_mode():
+        _MOCK_ENABLED = bool(enabled)
         return
     fd = None
     try:
@@ -43,10 +74,7 @@ def set_enable(enabled):
 
 
 def get_status():
-    if not IS_LINUX:
-        return _mock_data()
-
-    if not os.path.exists(DEVICE_PATH):
+    if is_mock_mode():
         return _mock_data()
 
     fd = None
@@ -68,21 +96,17 @@ def get_status():
 
 
 def add_rule(data):
-    if not IS_LINUX:
+    global _MOCK_NEXT_RULE_ID
+    rule = _normalize_rule(data)
+    if is_mock_mode():
+        rule['id'] = _MOCK_NEXT_RULE_ID
+        _MOCK_NEXT_RULE_ID += 1
+        _MOCK_RULES.append(rule)
         return
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
-        buf = struct.pack('IIIIIHHIIIIIII',
-            0, data.get('priority', 100),
-            data.get('protocol', 0),
-            _ip_to_int(data.get('saddr', '')),
-            _ip_to_int(data.get('daddr', '')),
-            data.get('sport', 0),
-            data.get('dport', 0),
-            0 if data.get('action', 'drop') == 'accept' else 1,
-            1 if data.get('enabled', True) else 0,
-            0, 0, 0, 0, 0)
+        buf = _pack_rule(rule)
         _ioctl_ADD_RULE(fd, buf)
     except OSError as e:
         raise RuntimeError(f"ioctl ADD_RULE failed: {e}")
@@ -92,12 +116,15 @@ def add_rule(data):
 
 
 def del_rule(rule_id):
-    if not IS_LINUX:
-        return
+    if is_mock_mode():
+        before = len(_MOCK_RULES)
+        _MOCK_RULES[:] = [rule for rule in _MOCK_RULES if rule['id'] != int(rule_id)]
+        return len(_MOCK_RULES) != before
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
         _ioctl_DEL_RULE(fd, rule_id)
+        return True
     except OSError as e:
         raise RuntimeError(f"ioctl DEL_RULE failed: {e}")
     finally:
@@ -106,22 +133,20 @@ def del_rule(rule_id):
 
 
 def update_rule(data):
-    if not IS_LINUX:
-        return
+    rule = _normalize_rule(data)
+    if is_mock_mode():
+        for index, existing in enumerate(_MOCK_RULES):
+            if existing['id'] == rule['id']:
+                rule['hit_count'] = existing.get('hit_count', 0)
+                _MOCK_RULES[index] = rule
+                return True
+        return False
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
-        buf = struct.pack('IIIIIHHIIIIIII',
-            data.get('id', 0), data.get('priority', 100),
-            data.get('protocol', 0),
-            _ip_to_int(data.get('saddr', '')),
-            _ip_to_int(data.get('daddr', '')),
-            data.get('sport', 0),
-            data.get('dport', 0),
-            0 if data.get('action', 'drop') == 'accept' else 1,
-            1 if data.get('enabled', True) else 0,
-            0, 0, 0, 0, 0)
+        buf = _pack_rule(rule)
         _ioctl_UPDATE_RULE(fd, buf)
+        return True
     except OSError as e:
         raise RuntimeError(f"ioctl UPDATE_RULE failed: {e}")
     finally:
@@ -130,8 +155,8 @@ def update_rule(data):
 
 
 def list_rules():
-    if not IS_LINUX:
-        return []
+    if is_mock_mode():
+        return copy.deepcopy(_MOCK_RULES)
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
@@ -160,8 +185,8 @@ def list_rules():
 
 
 def get_stats():
-    if not IS_LINUX:
-        return {"total_checked": 0, "total_dropped": 0, "total_accepted": 0, "drop_rate": 0, "protocols": {"icmp": 0, "tcp": 0, "udp": 0}}
+    if is_mock_mode():
+        return copy.deepcopy(_MOCK_STATS)
     fd = None
     try:
         fd = os.open(DEVICE_PATH, os.O_RDWR)
@@ -186,7 +211,9 @@ def get_stats():
 
 
 def set_default_policy(policy):
-    if not IS_LINUX:
+    global _MOCK_DEFAULT_POLICY
+    if is_mock_mode():
+        _MOCK_DEFAULT_POLICY = 'deny' if policy == 'deny' else 'accept'
         return
     fd = None
     try:
@@ -200,7 +227,14 @@ def set_default_policy(policy):
 
 
 def clear_stats():
-    if not IS_LINUX:
+    if is_mock_mode():
+        _MOCK_STATS.update({
+            "total_checked": 0,
+            "total_dropped": 0,
+            "total_accepted": 0,
+            "drop_rate": 0,
+            "protocols": {"icmp": 0, "tcp": 0, "udp": 0},
+        })
         return
     fd = None
     try:
@@ -261,15 +295,61 @@ def _ioctl_CLEAR_STATS(fd):
     fcntl.ioctl(fd, _ioc(0, FIREWALL_MAGIC, 9, 0), b'')
 
 
+def _pack_rule(rule):
+    return struct.pack('IIIIIHHIIIIIII',
+        rule.get('id', 0), rule.get('priority', 100),
+        rule.get('protocol_num', 0),
+        _ip_to_int(rule.get('saddr', '')),
+        _ip_to_int(rule.get('daddr', '')),
+        rule.get('sport', 0),
+        rule.get('dport', 0),
+        0 if rule.get('action', 'drop') == 'accept' else 1,
+        1 if rule.get('enabled', True) else 0,
+        0, 0, 0, 0, 0)
+
+
+def _proto_num(value):
+    if isinstance(value, int):
+        return value
+    return {'any': 0, 'icmp': 1, 'tcp': 6, 'udp': 17}.get(str(value).lower(), 0)
+
+
+def _normalize_ip(value):
+    value = str(value or '').strip()
+    if not value:
+        return ''
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return ''
+
+
+def _normalize_rule(data):
+    protocol_num = _proto_num(data.get('protocol', data.get('protocol_num', 0)))
+    return {
+        'id': int(data.get('id', 0) or 0),
+        'priority': int(data.get('priority', 100) or 100),
+        'protocol_num': protocol_num,
+        'protocol': _proto_name(protocol_num),
+        'saddr': _normalize_ip(data.get('saddr', '')),
+        'daddr': _normalize_ip(data.get('daddr', '')),
+        'sport': int(data.get('sport', 0) or 0),
+        'dport': int(data.get('dport', 0) or 0),
+        'action': 'accept' if data.get('action') == 'accept' else 'drop',
+        'enabled': bool(data.get('enabled', True)),
+        'hit_count': int(data.get('hit_count', 0) or 0),
+    }
+
+
 def _ip_to_int(ip):
     if not ip: return 0
-    parts = ip.split('.')
-    if len(parts) != 4: return 0
-    return (int(parts[0]) << 24) | (int(parts[1]) << 16) | (int(parts[2]) << 8) | int(parts[3])
+    return struct.unpack('I', socket.inet_aton(str(ip)))[0]
+
 
 def _int_to_ip(v):
     if v == 0: return ''
-    return f"{(v>>24)&0xFF}.{(v>>16)&0xFF}.{(v>>8)&0xFF}.{v&0xFF}"
+    return socket.inet_ntoa(struct.pack('I', v))
+
 
 def _proto_name(n):
     return {0: 'any', 1: 'icmp', 6: 'tcp', 17: 'udp'}.get(n, str(n))

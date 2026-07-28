@@ -58,6 +58,7 @@ from src.defense import (
     get_stats as defense_get_stats,
     set_default_policy as defense_set_default,
     clear_stats as defense_clear_stats,
+    is_mock_mode as defense_is_mock_mode,
 )
 from src.llm import (
     analyze_alert, suggest_defense, analyze_attack_chain,
@@ -471,7 +472,7 @@ def get_dashboard():
     ids_stats = get_alert_stats().get_json()
     try:
         ips_status = defense_status()
-        ips_name = "available"
+        ips_name = "mock" if defense_is_mock_mode() else "available"
     except Exception:
         ips_status = {"enabled": False, "rule_count": 0, "uptime_seconds": 0, "default_policy": "accept"}
         ips_name = "unavailable"
@@ -530,7 +531,8 @@ def api_defense_update_rule(rule_id):
     if isinstance(data.get("protocol"), str):
         data["protocol"] = proc.get(data["protocol"], 0)
     try:
-        defense_update_rule(data)
+        if defense_update_rule(data) is False:
+            return jsonify({"code": 1, "message": "规则不存在"}), 404
         return jsonify({"code": 0, "message": "OK"})
     except Exception as e:
         return jsonify({"code": 1, "message": f"修改规则失败: {e}"}), 500
@@ -538,7 +540,8 @@ def api_defense_update_rule(rule_id):
 @app.delete("/api/defense/rules/<int:rule_id>")
 def api_defense_delete_rule(rule_id):
     try:
-        defense_del_rule(rule_id)
+        if defense_del_rule(rule_id) is False:
+            return jsonify({"code": 1, "message": "规则不存在"}), 404
         return jsonify({"code": 0, "message": "OK"})
     except Exception as e:
         return jsonify({"code": 1, "message": f"删除规则失败: {e}"}), 500

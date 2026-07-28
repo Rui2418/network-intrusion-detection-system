@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import src.app as app_module
+import src.defense as defense_module
 from src.app import app
 from src.detector.rules import detect_attacks
 from src.parser.log_parser import parse_csv_log
@@ -183,6 +184,105 @@ def test_upload_rejects_invalid_port():
 
     assert response.status_code == 400
     assert "CSV 日志格式错误" in response.get_json()["error"]
+
+
+def test_defense_module_mock_state_persists_rules(monkeypatch):
+    monkeypatch.setattr(defense_module, "is_kernel_available", lambda: False)
+    defense_module._MOCK_RULES.clear()
+    defense_module._MOCK_NEXT_RULE_ID = 1
+    defense_module._MOCK_ENABLED = False
+    defense_module._MOCK_DEFAULT_POLICY = "accept"
+
+    defense_module.set_enable(True)
+    defense_module.set_default_policy("deny")
+    defense_module.add_rule({"priority": 20, "protocol": "tcp", "saddr": "192.168.1.10", "dport": 80, "action": "drop", "enabled": True})
+    [rule] = defense_module.list_rules()
+    rule["priority"] = 999
+    defense_module.update_rule({"id": rule["id"], "priority": 5, "protocol": "udp", "daddr": "10.0.0.2", "sport": 53, "action": "accept", "enabled": False})
+    [updated] = defense_module.list_rules()
+
+    assert defense_module.get_status() == {"enabled": True, "default_policy": "deny", "rule_count": 1, "uptime_seconds": 0}
+    assert updated["priority"] == 5
+    assert updated["protocol_num"] == 17
+    assert updated["protocol"] == "udp"
+    assert updated["daddr"] == "10.0.0.2"
+    assert updated["sport"] == 53
+    assert updated["action"] == "accept"
+    assert updated["enabled"] is False
+
+    defense_module.del_rule(updated["id"])
+    assert defense_module.list_rules() == []
+
+
+def test_defense_mock_mode_persists_rule_crud(monkeypatch):
+    monkeypatch.setattr(app_module, "defense_is_mock_mode", lambda: True)
+    monkeypatch.setattr(app_module, "defense_set_enable", lambda enabled: None)
+
+    rules = []
+    next_id = 1
+
+    def add_rule(rule):
+        nonlocal next_id
+        saved = dict(rule)
+        saved.update({"id": next_id, "protocol_num": 6, "protocol": "tcp", "hit_count": 0})
+        next_id += 1
+        rules.append(saved)
+
+    def update_rule(rule):
+        for index, existing in enumerate(rules):
+            if existing["id"] == rule["id"]:
+                rules[index] = {**existing, **rule}
+                return True
+        return False
+
+    def delete_rule(rule_id):
+        before = len(rules)
+        rules[:] = [rule for rule in rules if rule["id"] != rule_id]
+        return len(rules) != before
+
+    monkeypatch.setattr(app_module, "defense_status", lambda: {"enabled": True, "default_policy": "accept", "rule_count": len(rules), "uptime_seconds": 0})
+    monkeypatch.setattr(app_module, "defense_list_rules", lambda: [dict(rule) for rule in rules])
+    monkeypatch.setattr(app_module, "defense_add_rule", add_rule)
+    monkeypatch.setattr(app_module, "defense_update_rule", update_rule)
+    monkeypatch.setattr(app_module, "defense_del_rule", delete_rule)
+
+    with app.test_client() as client:
+        enable_response = client.post("/api/defense/enable", json={"enabled": True})
+        create_response = client.post("/api/defense/rules", json={"priority": 10, "protocol": "tcp", "saddr": "192.168.1.10", "dport": 80, "action": "drop", "enabled": True})
+        list_response = client.get("/api/defense/rules")
+        rule_id = list_response.get_json()["data"][0]["id"]
+        update_response = client.put(f"/api/defense/rules/{rule_id}", json={"priority": 5, "protocol": "tcp", "saddr": "192.168.1.10", "dport": 443, "action": "accept", "enabled": False})
+        updated_response = client.get("/api/defense/rules")
+        delete_response = client.delete(f"/api/defense/rules/{rule_id}")
+        empty_response = client.get("/api/defense/rules")
+        missing_update_response = client.put("/api/defense/rules/999", json={"priority": 1, "protocol": "tcp", "dport": 1, "action": "drop", "enabled": True})
+        missing_delete_response = client.delete("/api/defense/rules/999")
+
+    assert enable_response.status_code == 200
+    assert create_response.status_code == 200
+    assert list_response.get_json()["data"][0]["dport"] == 80
+    assert update_response.status_code == 200
+    updated_rule = updated_response.get_json()["data"][0]
+    assert updated_rule["priority"] == 5
+    assert updated_rule["dport"] == 443
+    assert updated_rule["action"] == "accept"
+    assert updated_rule["enabled"] is False
+    assert delete_response.status_code == 200
+    assert empty_response.get_json()["data"] == []
+    assert missing_update_response.status_code == 404
+    assert missing_delete_response.status_code == 404
+
+
+def test_dashboard_reports_mock_ips_availability(monkeypatch):
+    monkeypatch.setattr(app_module, "defense_status", lambda: {"enabled": False, "default_policy": "accept", "rule_count": 0, "uptime_seconds": 0})
+    monkeypatch.setattr(app_module, "defense_get_stats", lambda: {"total_checked": 0, "total_dropped": 0, "total_accepted": 0, "drop_rate": 0, "protocols": {"icmp": 0, "tcp": 0, "udp": 0}})
+    monkeypatch.setattr(app_module, "defense_is_mock_mode", lambda: True)
+
+    with app.test_client() as client:
+        response = client.get("/api/dashboard")
+
+    assert response.status_code == 200
+    assert response.get_json()["ips"]["availability"] == "mock"
 
 
 def upload_csv(content: str):
