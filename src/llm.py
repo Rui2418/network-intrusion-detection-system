@@ -9,6 +9,7 @@ except ImportError:
     _HTTP_OK = False
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "llm_config.json"
+# 默认连接本地 Ollama，也可以通过前端配置为 OpenAI 兼容接口。
 DEFAULT_CONFIG = {
     "provider": "ollama",
     "api_url": "http://localhost:11434",
@@ -124,6 +125,7 @@ def test_connection(cfg: dict = None) -> dict:
         return {"ok": False, "error": str(e)}
 
 def _call_llm(prompt: str) -> str or None:
+    # 调用失败时返回 None，由上层统一切换到规则化分析文本。
     cfg = _load_config()
     if not cfg.get("enabled", True):
         return None
@@ -168,6 +170,7 @@ def is_available() -> bool:
     return test_connection().get("ok", False)
 
 def _fallback_analyze(alert: dict) -> str:
+    # 模型未启用或不可达时，仍给出稳定的课程演示用处置建议。
     alert_type = alert.get("alert_type", "未知")
     source_ip = alert.get("source_ip", "未知")
     target = alert.get("target", "未知")

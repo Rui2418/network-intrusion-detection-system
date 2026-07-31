@@ -6,6 +6,7 @@ from datetime import datetime
 from src.detector.models import Alert, Incident
 
 
+# 将不同检测器产生的告警归并到攻击链阶段，便于从单点告警上升到事件视角。
 STAGE_MAP = {
     "端口扫描": "reconnaissance",
     "可疑路径访问": "reconnaissance",
@@ -41,6 +42,7 @@ def correlate_alerts(alerts: list[Alert]) -> list[Incident]:
             stage = STAGE_MAP.get(alert.alert_type)
             if stage and stage not in stages:
                 stages.append(stage)
+        # 单一阶段只保留为告警；同一来源跨两个以上阶段时才生成攻击链事件。
         if len(stages) < 2:
             continue
 

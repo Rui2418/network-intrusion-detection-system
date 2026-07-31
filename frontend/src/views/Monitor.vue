@@ -104,6 +104,7 @@ export default {
 
     this.socket = io()
     this.socket.on('connect', () => { this.connected = true })
+    // 实时事件只作为刷新信号，列表排序和字段兼容统一交给后端接口处理。
     this.socket.on('analysis_result', () => { this.fetchAlerts() })
     this.socket.on('disconnect', () => { this.connected = false })
   },

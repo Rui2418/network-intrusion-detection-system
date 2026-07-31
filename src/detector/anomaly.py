@@ -11,6 +11,7 @@ from src.scoring.risk import score_alert
 MANAGEMENT_PORTS = {22, 3389, 445, 5985}
 
 
+# 这里的阈值是课程演示用的固定基线，便于用样例日志稳定复现异常告警。
 def detect_anomalies(events: list[LogEvent]) -> tuple[list[Alert], dict[str, object]]:
     alerts: list[Alert] = []
     request_rate_per_ip: list[BaselineMetric] = []

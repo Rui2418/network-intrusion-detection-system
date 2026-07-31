@@ -49,6 +49,7 @@ def parse_csv_log(file_path: str | Path) -> list[LogEvent]:
 
 
 def parse_csv_rows(rows: Iterable[dict[str, str]]) -> Iterable[LogEvent]:
+    # 基础字段保持必填，扩展字段为空时保留为默认值，兼容旧版 CSV 样例。
     for row_index, row in enumerate(rows, start=1):
         try:
             yield LogEvent(

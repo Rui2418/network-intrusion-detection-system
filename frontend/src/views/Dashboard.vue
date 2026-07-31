@@ -91,6 +91,7 @@ export default {
     fmtNum(n) { return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n) },
     fmtTime(s) { s = parseInt(s); const m = Math.floor(s/60); return m > 0 ? `${m}m ${s%60}s` : `${s}s` },
     normalizeIds(data = {}) {
+      // 兼容完整分析结果和 dashboard 统计接口两种返回形态。
       const summary = data.summary || {}
       const alerts = data.alerts || []
       const totalHits = summary.total_hits ?? alerts.reduce((sum, alert) => sum + Number(alert.count || 1), 0)

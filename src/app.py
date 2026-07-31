@@ -18,6 +18,7 @@ except ModuleNotFoundError:
 try:
     from flask_socketio import SocketIO
 except ModuleNotFoundError:
+    # 未安装 SocketIO 依赖时保留同步接口可用，实时推送能力退化为空实现。
     class SocketIO:
         def __init__(self, app, **_kwargs):
             self.app = app
@@ -122,6 +123,7 @@ def empty_analysis() -> dict[str, object]:
 
 
 _last_analysis = empty_analysis()
+# 用文件修改时间、大小和已读行数跟踪靶场日志，后台线程只分析新增记录。
 _lab_log_signature: tuple[int, int] | None = None
 _lab_log_seen_rows: int | None = None
 _lab_watcher_started = False
@@ -495,6 +497,7 @@ def start_lab_log_watcher() -> None:
 
 
 def analyze_events(events, source: str) -> dict[str, object]:
+    # 统一分析入口：规则、特征库和异常检测先独立产出告警，再做攻击链关联和响应建议。
     rule_alerts = detect_attacks(events)
     signature_alerts = detect_signature_attacks(events)
     anomaly_alerts, baseline = detect_anomalies(events)

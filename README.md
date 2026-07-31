@@ -74,9 +74,15 @@
 
 - `GET /api/sample`：分析内置示例日志
 - `POST /api/analyze`：上传 CSV 日志并分析
+- `GET /api/analyze/lab-live`：读取靶场实时访问日志并分析
 - `GET /api/alerts`：按条件筛选告警
+- `GET /api/alerts/export`：按当前筛选条件导出告警 CSV
+- `POST /api/alerts/clear`：清空当前告警和靶场访问日志
 - `GET /api/alerts/stats`：获取统计信息
 - `GET /api/alerts/recent`：获取最近告警
+- `POST /api/alerts/analyze`：对单条告警生成 AI/规则化分析说明
+- `POST /api/alerts/defend`：根据告警生成并尝试下发防御规则
+- `POST /api/alerts/chain`：对告警集合生成攻击链推演文本
 - `GET /api/dashboard`：聚合 IDS 与防御模块状态
 
 `GET /api/sample` 和 `POST /api/analyze` 会返回统一分析结果，主要字段包括：
@@ -119,9 +125,24 @@
 - `PUT /api/defense/rules/<id>`
 - `DELETE /api/defense/rules/<id>`
 - `GET /api/defense/stats`
+- `POST /api/defense/stats/record`
+- `POST /api/defense/stats/clear`
+- `GET /api/defense/default-policy`
 - `PUT /api/defense/default-policy`
 
-这部分当前主要用于教学型联动演示。在非 Linux 环境或没有对应内核设备时，会回退到模拟状态，不应理解为完整可部署的生产级防火墙系统。
+这部分当前主要用于教学型联动演示。在非 Linux 环境或没有对应内核设备时，会回退到模拟状态。模拟模式只维护内存中的规则、状态和统计数字，用于页面展示和答辩演示，不会真正修改系统防火墙规则，也不应理解为完整可部署的生产级防火墙系统。
+
+### 6. AI 分析辅助模块
+
+项目包含 [src/llm.py](./src/llm.py) 作为告警解释和防御建议的 AI 辅助层。该模块默认连接本地 Ollama 服务，也支持通过配置切换到 OpenAI 兼容接口。当前后端提供：
+
+- `GET /api/llm/status`：检查 AI 分析服务是否可用
+- `GET /api/llm/config`：读取当前 AI 配置，返回结果会隐藏 API Key
+- `PUT /api/llm/config`：更新 provider、接口地址、模型名等配置
+- `POST /api/llm/test`：测试指定配置或当前配置是否可连接
+- `GET /api/llm/models`：获取当前 provider 下可用模型列表
+
+当模型服务未启用、未安装 HTTP 依赖或接口不可达时，系统会自动使用内置规则化文本生成告警解释、防御建议和攻击链分析，保证课程演示流程不会因为模型不可用而中断。AI 输出仅作为辅助说明，最终判断仍以检测规则、特征匹配、异常检测结果和人工复核为准。
 
 ## 项目结构
 
@@ -134,12 +155,15 @@ network intrusion detection system/
 ├── data/
 │   ├── sample_logs.csv
 │   ├── sample_logs_extended.csv
-│   └── signatures.json
+│   ├── signatures.json
+│   └── llm_config.json          # AI 分析模块配置文件
 ├── kernel_module/              # Linux 内核防御模块相关内容
 ├── frontend/                   # Vue 前端工程与构建产物
+├── 交大学生成绩管理系统_vuln_lab/ # 课程演示靶场与访问日志来源
 ├── src/
 │   ├── app.py                  # Flask 应用与 API
 │   ├── defense.py              # 防御接口封装
+│   ├── llm.py                  # AI 告警分析与防御建议辅助模块
 │   ├── detector/
 │   │   ├── anomaly.py          # 异常检测与基线统计
 │   │   ├── correlation.py      # 攻击链关联与响应建议
@@ -275,7 +299,7 @@ python app.py
 http://127.0.0.1:8001
 ```
 
-靶场运行后会把访问记录写入 `交大学生成绩管理系统_vuln_lab/data/access_log.csv`。回到 IDS 页面后，使用“分析靶场实时日志”即可读取这份日志并生成告警。靶场的演示账号和脚本命令见 [交大学生成绩管理系统_vuln_lab/README.md](./交大学生成绩管理系统_vuln_lab/README.md)。
+靶场运行后会把访问记录写入 `交大学生成绩管理系统_vuln_lab/data/access_log.csv`。回到 IDS 页面后，使用“分析靶场实时日志”即可读取这份日志并生成告警。前端与后端建立 WebSocket 连接后，后端还会启动后台监听任务，按文件变化增量读取新增访问记录，并把新的分析结果推送到监控页面。靶场的演示账号和脚本命令见 [交大学生成绩管理系统_vuln_lab/README.md](./交大学生成绩管理系统_vuln_lab/README.md)。
 
 ## 测试
 
@@ -283,6 +307,12 @@ http://127.0.0.1:8001
 
 ```bash
 python -m pytest
+```
+
+运行靶场子项目测试：
+
+```bash
+PYTHONPATH="C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/交大学生成绩管理系统_vuln_lab;C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system" python -m pytest "C:/Users/tmp/Desktop/信安科技创新/network intrusion detection system/交大学生成绩管理系统_vuln_lab/tests"
 ```
 
 检查前端是否可以正常构建：

@@ -8,6 +8,7 @@ import ctypes
 import ctypes.util
 
 DEVICE_PATH = "/dev/firewall"
+# 真实 IPS 联动只在 Linux 且存在 /dev/firewall 设备时启用，其余环境走模拟状态。
 IS_LINUX = sys.platform.startswith('linux')
 
 _libc = None
@@ -25,6 +26,7 @@ else:
     _fcntl_ok = False
     IS_LINUX = False
 
+# 与内核模块约定的二进制规则结构，Python 侧只负责打包和 ioctl 边界转换。
 FWRULE_FMT = 'IIIIIHHIIIIIII'
 
 _MOCK_RULES = []

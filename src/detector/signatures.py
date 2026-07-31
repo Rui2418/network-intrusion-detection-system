@@ -29,7 +29,7 @@ def detect_signature_attacks(events: list[LogEvent]) -> list[Alert]:
             matched_pattern = None
 
             for field in signature.get("fields", []):
-                # 获取原始字段值，先做 URL 解码再匹配正则
+                # 攻击载荷常出现在 URL 编码后的 path 或 query 中，先解码再匹配特征。
                 raw_value = str(getattr(event, field, "") or "")
                 if not raw_value:
                     continue
@@ -46,6 +46,7 @@ def detect_signature_attacks(events: list[LogEvent]) -> list[Alert]:
             if not matched_fields:
                 continue
 
+            # 同一来源、目标和特征多次命中时聚合为一条告警，用 count 表示强度。
             key = (event.source_ip, event.target_ip, str(signature["id"]))
             current = grouped.get(key)
             if not current:
